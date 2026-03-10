@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ro" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="description" content="ZenAIos — AI Hospital Management Dashboard for Oradea County Emergency Hospital">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-96.png">
+    <title>ZenAIos — Sistem AI Spitalicesc</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=2">
+    <script src="i18n.js?v=2"></script>
+    <script>
+        // Session guard: redirect to login if not authenticated or expired.
+        (function() {
+            const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+            const tsRaw = sessionStorage.getItem('zenaios-session');
+            const ts = Number.parseInt(tsRaw || '', 10);
+            const expired = !Number.isFinite(ts) || (Date.now() - ts) > SESSION_TIMEOUT_MS;
+            if (expired) {
+                window.location.replace('login.html');
+            }
+        })();
+    </script>
+</head>
+<body>
+
+<!-- Skip navigation link for keyboard users -->
+<a href="#mainContent" class="skip-link" id="skipNav">Skip to main content</a>
+
+<!-- Language Switcher -->
+<div class="lang-switcher" id="langSwitcher" role="toolbar" aria-label="Language selection"></div>
+
+<div class="app-layout">
+    <!-- LEFT SIDEBAR — Features -->
+    <aside class="sidebar-left" aria-label="Features">
+        <div class="brand" role="banner">
+            <div class="brand-icon">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <rect width="28" height="28" rx="6" fill="#E8EEFF"/>
+                    <rect x="5" y="5" width="8" height="8" rx="2" fill="#3B5BDB"/>
+                    <rect x="15" y="5" width="8" height="8" rx="2" fill="#3B5BDB"/>
+                    <rect x="5" y="15" width="8" height="8" rx="2" fill="#3B5BDB"/>
+                    <rect x="15" y="15" width="8" height="8" rx="2" fill="#748FFC" opacity="0.5"/>
+                </svg>
+            </div>
+            <div>
+                <div class="brand-name" id="hospName">Sistem AI</div>
+                <div class="brand-sub" id="hospSub" data-i18n="brandSub">SISTEM AI SPITALICESC</div>
+            </div>
+        </div>
+
+        <h1 class="hero-title" data-i18n-html="heroTitle">
+            Sistem<br>AI<br>Spitalicesc.<br><span>Control<br>total.</span>
+        </h1>
+
+        <p class="hero-desc" data-i18n="heroDesc">
+            Soluție AI de management pentru Spitalul Județean de Urgență Oradea. Date în timp real — paturi, personal, urgențe și rapoarte, oriunde te afli.
+        </p>
+
+        <div class="feature-list">
+            <div class="feature-item">
+                <div class="feature-icon" style="background:#E8EEFF;">🛏️</div>
+                <div>
+                    <div class="feature-title" data-i18n="featBeds">Paturi libere & ocupate</div>
+                    <div class="feature-desc" data-i18n="featBedsDesc">Pe secție, actualizate live</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon" style="background:#E8EEFF;">👨‍⚕️</div>
+                <div>
+                    <div class="feature-title" data-i18n="featDoctors">Medici de gardă</div>
+                    <div class="feature-desc" data-i18n="featDoctorsDesc">Status, specialitate, etaj</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon" style="background:#FFE8E8;">🔔</div>
+                <div>
+                    <div class="feature-title" data-i18n="featAlerts">Alerte critice</div>
+                    <div class="feature-desc" data-i18n="featAlertsDesc">Notificări instant prioritizate</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon" style="background:#E8F5E8;">📊</div>
+                <div>
+                    <div class="feature-title" data-i18n="featKpi">KPI & Rapoarte CAS</div>
+                    <div class="feature-desc" data-i18n="featKpiDesc">Statistici și decontări</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- CENTER — Phone Mockup -->
+    <main class="phone-container" id="mainContent">
+        <div class="phone-frame" role="application" aria-label="Hospital dashboard">
+            <div class="phone-notch">
+                <span class="phone-time">09:14</span>
+                <span class="phone-wifi">📶 WiFi</span>
+            </div>
+
+            <div class="phone-content">
+                <!-- Header -->
+                <div class="phone-header">
+                    <div>
+                        <div class="greeting" data-i18n="greetMorning">BUNĂ DIMINEAȚA</div>
+                        <div class="doctor-name" id="docName">Manager Spital</div>
+                        <div class="doctor-role" id="docRole" data-i18n="doctorRole">Manager Sistem AI</div>
+                    </div>
+                    <div class="avatar" id="docAvatar">DM</div>
+                </div>
+
+                <!-- Alert Banner -->
+                <div class="alert-banner" role="alert" aria-live="polite">
+                    <span class="alert-dot" aria-hidden="true"></span>
+                    <span data-i18n="alertBanner">3 urgențe active — necesită atenție imediată</span>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="stats-grid" role="region" aria-label="Key statistics">
+                    <button type="button" class="stat-card stat-occupied" aria-label="Occupied beds">
+                        <div class="stat-badge">
+                            <span class="badge-icon" aria-hidden="true">🔥</span> 94%
+                        </div>
+                        <div class="stat-value">487</div>
+                        <div class="stat-label" data-i18n="bedsOccupied">PATURI OCUPATE</div>
+                    </button>
+                    <button type="button" class="stat-card stat-free" aria-label="Free beds">
+                        <div class="stat-badge badge-green">
+                            <span class="badge-icon">🟢</span> <span data-i18n="badgeFree">libere</span>
+                        </div>
+                        <div class="stat-value">28</div>
+                        <div class="stat-label" data-i18n="bedsFree">PATURI LIBERE</div>
+                    </button>
+                    <button type="button" class="stat-card stat-doctors" aria-label="Doctors on call">
+                        <div class="stat-badge badge-blue">
+                            <span class="badge-icon">👨‍⚕️</span> <span data-i18n="badgeActive">activi</span>
+                        </div>
+                        <div class="stat-value">14</div>
+                        <div class="stat-label" data-i18n="doctorsOnCall">MEDICI GARDĂ</div>
+                    </button>
+                    <button type="button" class="stat-card stat-alerts" aria-label="Active alerts">
+                        <div class="stat-badge badge-red">
+                            <span class="badge-icon">⚠️</span> <span data-i18n="badgeCritical">critic</span>
+                        </div>
+                        <div class="stat-value">3</div>
+                        <div class="stat-label" data-i18n="activeAlerts">ALERTE ACTIVE</div>
+                    </button>
+                </div>
+
+                <!-- Sections -->
+                <div class="sections-header">
+                    <h3 data-i18n="sectionsBeds">SECȚII — PATURI</h3>
+                    <button type="button" class="see-all" data-i18n="seeAll">Toate →</button>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-top">
+                        <span class="section-dot" style="background:#e03131;"></span>
+                        <span class="section-name" data-i18n="sectionCardiology">Cardiologie</span>
+                        <span class="section-pct" style="background:#e8f5e8;color:#2b8a3e;">97%</span>
+                    </div>
+                    <div class="section-stats">
+                        <div class="section-stat">
+                            <div class="section-stat-val">62</div>
+                            <div class="section-stat-lbl" data-i18n="occupied">OCUPATE</div>
+                        </div>
+                        <div class="section-stat">
+                            <div class="section-stat-val" style="color:#2b8a3e;">2</div>
+                            <div class="section-stat-lbl" data-i18n="free">LIBERE</div>
+                        </div>
+                        <div class="section-stat">
+                            <div class="section-stat-val" style="color:#e03131;">3</div>
+                            <div class="section-stat-lbl" data-i18n="emergency">URGENȚĂ</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-top">
+                        <span class="section-dot" style="background:#7048e8;"></span>
+                        <span class="section-name" data-i18n="sectionNeurology">Neurologie</span>
+                        <span class="section-pct" style="background:#e8f5e8;color:#2b8a3e;">88%</span>
+                    </div>
+                    <div class="section-stats">
+                        <div class="section-stat">
+                            <div class="section-stat-val">44</div>
+                            <div class="section-stat-lbl" data-i18n="occupied">OCUPATE</div>
+                        </div>
+                        <div class="section-stat">
+                            <div class="section-stat-val" style="color:#2b8a3e;">6</div>
+                            <div class="section-stat-lbl" data-i18n="free">LIBERE</div>
+                        </div>
+                        <div class="section-stat">
+                            <div class="section-stat-val" style="color:#e03131;">1</div>
+                            <div class="section-stat-lbl" data-i18n="emergency">URGENȚĂ</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== VIEW: BEDS ===== -->
+                <div class="view-page" id="viewBeds" style="display:none;">
+                    <div class="view-header">
+                        <h2 data-i18n="viewBedsTitle">MANAGEMENTUL PATURILOR</h2>
+                    </div>
+                    <div class="view-summary" id="bedsSummary">
+                        <div class="view-summary-item">
+                            <span class="view-summary-val" id="bedsTotalVal">515</span>
+                            <span class="view-summary-lbl" data-i18n="viewBedsTotal">Total paturi</span>
+                        </div>
+                        <div class="view-summary-item">
+                            <span class="view-summary-val occ" id="bedsOccVal">487</span>
+                            <span class="view-summary-lbl" data-i18n="viewBedsOccupied">Ocupate</span>
+                        </div>
+                        <div class="view-summary-item">
+                            <span class="view-summary-val free" id="bedsFreeVal">28</span>
+                            <span class="view-summary-lbl" data-i18n="viewBedsFree">Libere</span>
+                        </div>
+                    </div>
+                    <div id="bedsAllSections"></div>
+                </div>
+
+                <!-- ===== VIEW: ALERTS ===== -->
+                <div class="view-page" id="viewAlerts" style="display:none;">
+                    <div class="view-header">
+                        <h2 data-i18n="viewAlertsTitle">CENTRUL DE ALERTE</h2>
+                    </div>
+                    <div id="alertsList" class="alerts-list-full"></div>
+                </div>
+
+                <!-- ===== VIEW: STAFF ===== -->
+                <div class="view-page" id="viewStaff" style="display:none;">
+                    <div class="view-header">
+                        <h2 data-i18n="viewStaffTitle">PERSONAL DE GARDĂ</h2>
+                    </div>
+                    <div class="view-summary" id="staffSummary">
+                        <div class="view-summary-item">
+                            <span class="view-summary-val" id="staffDoctorsVal">14</span>
+                            <span class="view-summary-lbl" data-i18n="viewStaffDoctors">Medici de gardă</span>
+                        </div>
+                        <div class="view-summary-item">
+                            <span class="view-summary-val" id="staffTotalVal">312</span>
+                            <span class="view-summary-lbl" data-i18n="viewStaffNurses">Asistente</span>
+                        </div>
+                        <div class="view-summary-item">
+                            <span class="view-summary-val free" id="staffAttVal">98.1%</span>
+                            <span class="view-summary-lbl" data-i18n="viewStaffAttendance">Prezență</span>
+                        </div>
+                    </div>
+                    <div id="staffByDept"></div>
+                </div>
+
+                <!-- ===== VIEW: REPORTS ===== -->
+                <div class="view-page" id="viewReports" style="display:none;">
+                    <div class="view-header">
+                        <h2 data-i18n="viewReportsTitle">RAPOARTE & KPI</h2>
+                    </div>
+                    <div class="report-cards" id="reportCards">
+                        <div class="report-card">
+                            <div class="report-card-label" data-i18n="viewReportsProcessed">Urgențe procesate azi</div>
+                            <div class="report-card-val" id="reportProcessed">28</div>
+                        </div>
+                        <div class="report-card">
+                            <div class="report-card-label" data-i18n="viewReportsAvgTriage">Timp mediu triaj</div>
+                            <div class="report-card-val" id="reportTriage">18 <small data-i18n="viewMinutes">min</small></div>
+                        </div>
+                        <div class="report-card">
+                            <div class="report-card-label" data-i18n="viewReportsCAS">Status raport CAS</div>
+                            <div class="report-card-val" style="color:#2b8a3e;" id="reportCAS" data-i18n="viewReportsCASApproved">Aprobat</div>
+                        </div>
+                    </div>
+                    <div id="historyChart" class="history-chart-container"></div>
+                </div>
+
+                <!-- ===== VIEW: CHAT ===== -->
+                <div class="view-page" id="viewChat" style="display:none;">
+                    <div class="chat-view">
+                        <div class="chat-header-bar">
+                            <div class="chat-header-avatar">🤖</div>
+                            <div class="chat-header-info">
+                                <div class="chat-header-name">ZenAI Assistant</div>
+                                <div class="chat-header-status">Coming Soon</div>
+                            </div>
+                        </div>
+                        <div class="chat-coming-soon">
+                            <div class="chat-coming-icon">💬</div>
+                            <h3>Coming Soon</h3>
+                            <p>Asistentul AI va fi disponibil în curând.<br>
+                               Chat, mesaje vocale, atașamente — toate într-un singur loc.</p>
+                            <div class="chat-coming-features">
+                                <div class="chat-coming-feat">
+                                    <span>💬</span>
+                                    <span>Chat text</span>
+                                </div>
+                                <div class="chat-coming-feat">
+                                    <span>🎤</span>
+                                    <span>Mesaje vocale</span>
+                                </div>
+                                <div class="chat-coming-feat">
+                                    <span>📎</span>
+                                    <span>Fișiere & poze</span>
+                                </div>
+                                <div class="chat-coming-feat">
+                                    <span>🤖</span>
+                                    <span>AI Assistant</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== QUICK CHAT BAR (dashboard only) ===== -->
+                <!-- Chat messages bubble area -->
+                <div class="chat-messages-area" id="chatMessagesArea" role="log" aria-live="polite" aria-label="Chat messages"></div>
+
+                <div class="dashboard-chat-bar" id="dashChatBar">
+                    <button type="button" class="chat-bar-btn" id="chatBarCamera" aria-label="Camera">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    </button>
+                    <input type="text" class="chat-bar-input" id="chatBarInput"
+                           placeholder="Message ZenAI..." data-i18n-placeholder="chatBarPlaceholder">
+                    <button type="button" class="chat-bar-btn chat-bar-mic" id="chatBarMic" aria-label="Microphone">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                    </button>
+                    <button type="button" class="chat-bar-btn chat-bar-send" id="chatBarSend" aria-label="Send">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                </div>
+
+                <!-- Camera Capture Overlay -->
+                <div class="chat-camera-overlay" id="chatCameraOverlay" role="dialog" aria-modal="true" aria-label="Camera capture">
+                    <video id="chatCameraVideo" autoplay muted playsinline></video>
+                    <div class="chat-camera-controls">
+                        <button type="button" class="chat-capture-btn" id="chatCaptureBtn" aria-label="Take photo">📷</button>
+                        <button type="button" class="chat-camera-close" id="chatCameraClose" aria-label="Close camera">✕</button>
+                    </div>
+                    <canvas id="chatCaptureCanvas" style="display:none;"></canvas>
+                </div>
+
+                <!-- Bottom Nav -->
+                <nav class="bottom-nav" role="navigation" aria-label="Main navigation">
+                    <button type="button" class="nav-item active" data-view="dashboard" aria-current="page">
+                        <span aria-hidden="true">📊</span>
+                        <span data-i18n="navDashboard">Tablou</span>
+                    </button>
+                    <button type="button" class="nav-item" data-view="beds">
+                        <span aria-hidden="true">🛏️</span>
+                        <span data-i18n="navBeds">Paturi</span>
+                    </button>
+                    <button type="button" class="nav-item" data-view="alerts">
+                        <span aria-hidden="true">🔔</span>
+                        <span data-i18n="navAlerts">Alerte</span>
+                    </button>
+                    <button type="button" class="nav-item" data-view="staff">
+                        <span aria-hidden="true">👥</span>
+                        <span data-i18n="navStaff">Personal</span>
+                    </button>
+                    <button type="button" class="nav-item" data-view="reports">
+                        <span aria-hidden="true">📄</span>
+                        <span data-i18n="navReports">Rapoarte</span>
+                    </button>
+                    <button type="button" class="nav-item" data-view="chat">
+                        <span aria-hidden="true">💬</span>
+                        <span data-i18n="navChat">Chat</span>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </main>
+
+    <!-- RIGHT SIDEBAR — KPIs & Alerts -->
+    <aside class="sidebar-right" aria-label="KPIs and Alerts">
+        <div class="kpi-card">
+            <div class="kpi-label" data-i18n="kpiTotalBeds">TOTAL PATURI SPITAL</div>
+            <div class="kpi-value">515</div>
+            <div class="kpi-detail" data-i18n-key="kpiDetail1">487 ocupate · 28 libere · 94% ocupare</div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-label" data-i18n="kpiStaff">PERSONAL ACTIV AZI</div>
+            <div class="kpi-value" style="color:#2b8a3e;">312</div>
+            <div class="kpi-detail" data-i18n="kpiStaffDetail">14 medici de gardă · 98.1% prezență</div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-label" data-i18n="kpiEmergencies">URGENȚE ÎN CURS</div>
+            <div class="kpi-value" style="color:#e03131;">3</div>
+            <div class="kpi-detail" data-i18n="kpiEmergDetail">28 urgențe procesate azi · triaj 18 min</div>
+        </div>
+
+        <div class="alerts-section">
+            <div class="alerts-title" data-i18n="alertsTitle">ALERTE PRIORITARE</div>
+
+            <div class="alert-item alert-critical">
+                <div class="alert-icon">🩸</div>
+                <div class="alert-body">
+                    <div class="alert-name" data-i18n="alertBlood">Lipsă sânge O Rh–</div>
+                    <div class="alert-meta" data-i18n="alertBloodMeta">Stoc sub limita critică</div>
+                </div>
+                <div class="alert-time">4m</div>
+            </div>
+
+            <div class="alert-item alert-warning">
+                <div class="alert-icon">🔧</div>
+                <div class="alert-body">
+                    <div class="alert-name" data-i18n="alertCT">CT defect Radiologie</div>
+                    <div class="alert-meta" data-i18n="alertCTMeta">Mentenanță în curs</div>
+                </div>
+                <div class="alert-time">31m</div>
+            </div>
+
+            <div class="alert-item alert-info">
+                <div class="alert-icon">📋</div>
+                <div class="alert-body">
+                    <div class="alert-name" data-i18n="alertCAS">Raport CAS aprobat</div>
+                    <div class="alert-meta" data-i18n="alertCASMeta">Decontare august ✓</div>
+                </div>
+                <div class="alert-time">1h</div>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- Department Detail Modal -->
+<div class="dept-modal-overlay" id="deptModal" style="display:none;" role="dialog" aria-modal="true" aria-label="Department details">
+    <div class="dept-modal">
+        <div class="dept-modal-header">
+            <span class="dept-modal-dot" id="deptModalDot"></span>
+            <h3 id="deptModalName"></h3>
+            <button class="dept-modal-close" id="deptModalClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="dept-modal-body">
+            <div class="dept-modal-stats">
+                <div class="dept-modal-stat">
+                    <span class="dept-modal-val" id="deptModalOcc"></span>
+                    <span class="dept-modal-lbl" data-i18n="occupied">OCUPATE</span>
+                </div>
+                <div class="dept-modal-stat">
+                    <span class="dept-modal-val dept-free" id="deptModalFree"></span>
+                    <span class="dept-modal-lbl" data-i18n="free">LIBERE</span>
+                </div>
+                <div class="dept-modal-stat">
+                    <span class="dept-modal-val dept-urgent" id="deptModalUrg"></span>
+                    <span class="dept-modal-lbl" data-i18n="emergency">URGENȚĂ</span>
+                </div>
+            </div>
+            <div class="dept-modal-bar-wrap">
+                <div class="dept-modal-bar">
+                    <div class="dept-modal-bar-fill" id="deptModalBar"></div>
+                </div>
+                <span class="dept-modal-bar-pct" id="deptModalPct"></span>
+            </div>
+            <div class="dept-modal-info" id="deptModalInfo"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Connectivity banner -->
+<div id="offlineBanner" role="alert" aria-live="assertive" style="display:none; position:fixed; top:0; left:0; right:0; z-index:9999;
+    background:linear-gradient(135deg,#e03131,#c92a2a); color:#fff; text-align:center;
+    padding:8px 16px; font-size:12px; font-weight:700; font-family:'Inter',sans-serif;
+    letter-spacing:0.5px; box-shadow:0 2px 12px rgba(0,0,0,0.3);">
+    ⚠️ OFFLINE — Se afișează date locale
+    <span id="offlineAge" style="opacity:0.7; margin-left:8px;"></span>
+</div>
+
+<!-- Tesseract.js — client-side OCR for chat image captures (WASM, cached after first load) -->
+<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js" async></script>
+<script src="api-config.js?v=2"></script>
+<script src="data-sync.js?v=2"></script>
+<script src="views.js?v=2"></script>
+<script src="app.js?v=2"></script>
+<script src="app-chat-bar.js?v=2"></script>
+<script>
+    // Auto-lock inactive sessions for safety.
+    (function() {
+        const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+        let timeoutId;
+
+        function lockSession() {
+            sessionStorage.removeItem('zenaios-session');
+            sessionStorage.removeItem('zenaios-user');
+            window.location.replace('login.html');
+        }
+
+        function resetTimer() {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(lockSession, SESSION_TIMEOUT_MS);
+            if (sessionStorage.getItem('zenaios-user')) {
+                sessionStorage.setItem('zenaios-session', Date.now().toString());
+            }
+        }
+
+        ['click', 'keydown', 'touchstart', 'scroll', 'mousemove'].forEach((eventName) => {
+            document.addEventListener(eventName, resetTimer, { passive: true });
+        });
+
+        window.addEventListener('beforeunload', () => clearTimeout(timeoutId));
+        resetTimer();
+    })();
+</script>
+</body>
+</html>

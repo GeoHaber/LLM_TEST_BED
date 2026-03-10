@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="page-title">ZenAIos Swarm Test Dashboard</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#c9d1d9;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--muted:#8b949e}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{background:var(--card);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:16px}
+header h1{font-size:18px;color:var(--accent)}
+#status-dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+#status-dot.ok{background:var(--green)}
+#status-dot.err{background:var(--red)}
+#status-text{font-size:13px;color:var(--muted)}
+.tabs{display:flex;background:var(--card);border-bottom:1px solid var(--border);overflow-x:auto}
+.tab{padding:10px 20px;cursor:pointer;border:none;background:none;color:var(--muted);font-size:14px;white-space:nowrap;border-bottom:2px solid transparent}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.panels{padding:20px;max-width:1200px;margin:0 auto}
+.panel{display:none}
+.panel.active{display:block}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px}
+.card h3{margin-bottom:12px;font-size:15px;color:var(--accent)}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+input,select,textarea{width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;margin-bottom:10px;font-family:inherit}
+textarea{min-height:80px;resize:vertical}
+button{padding:8px 18px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}
+button:hover{opacity:.85}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.danger{background:var(--red)}
+button.secondary{background:var(--border);color:var(--text)}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row > *{flex:1;min-width:200px}
+.model-list{max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--bg)}
+.model-item{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px}
+.model-item input[type=checkbox]{width:auto;margin:0}
+.output{background:#0a0e14;border:1px solid var(--border);border-radius:6px;padding:12px;font-family:'Cascadia Code',monospace;font-size:12px;max-height:500px;overflow:auto;white-space:pre-wrap;line-height:1.5}
+.output:empty::before{content:'Output will appear here...';color:var(--muted)}
+.score-bar{display:flex;align-items:center;gap:8px;margin:4px 0}
+.score-bar .bar{flex:1;height:8px;border-radius:4px;background:var(--border)}
+.score-bar .fill{height:100%;border-radius:4px;transition:width .3s}
+.score-label{width:100px;font-size:12px;color:var(--muted)}
+.score-value{width:40px;text-align:right;font-size:12px;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--accent);font-weight:600;font-size:12px;text-transform:uppercase}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge.ok{background:#1a3524;color:var(--green)}
+.badge.warn{background:#3b2e10;color:var(--yellow)}
+.badge.err{background:#3d1518;color:var(--red)}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-left:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:768px){.grid-2,.row{grid-template-columns:1fr;flex-direction:column}}
+.trow{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:13px;font-family:'Cascadia Code',monospace}
+.trow .tname{flex:1;min-width:200px}
+.trow .tbadge{flex:0 0 60px;text-align:center;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.trow .ttime{flex:0 0 70px;text-align:right;color:var(--muted);font-size:11px}
+.trow .tdetail{flex:0 0 320px;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow.pass .tbadge{background:#1a3524;color:var(--green)}
+.trow.fail .tbadge{background:#3d1518;color:var(--red)}
+.trow.skip .tbadge{background:#3b2e10;color:var(--yellow)}
+.help-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;margin-left:8px;vertical-align:middle;line-height:1;padding:0;transition:all .2s}
+.help-btn:hover{color:var(--accent);border-color:var(--accent);background:rgba(88,166,255,.1)}
+.help-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center}
+.help-modal-bg.show{display:flex}
+.help-modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.help-modal h3{color:var(--accent);margin-bottom:12px;font-size:16px}
+.help-modal p{font-size:13.5px;line-height:1.65;color:var(--text);margin-bottom:10px}
+.help-modal .hlabel{font-size:12px;color:var(--accent);text-transform:uppercase;font-weight:600;margin-top:14px;margin-bottom:4px}
+.help-modal ul{padding-left:18px;margin-bottom:10px}
+.help-modal li{font-size:13px;line-height:1.6;color:var(--text);margin-bottom:3px}
+.help-modal code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--accent)}
+.help-close{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:4px;line-height:1}
+.help-close:hover{color:var(--text)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 data-i18n="hdr_title">&#x1F9EA; Swarm Test Dashboard</h1>
+  <span id="status-dot"></span>
+  <span id="status-text" data-i18n="hdr_checking">Checking...</span>
+  <select id="lang-select" onchange="setLang(this.value)" style="margin-left:auto;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;width:auto">
+    <option value="en">&#x1F1EC;&#x1F1E7; English</option>
+    <option value="fr">&#x1F1EB;&#x1F1F7; Fran&#231;ais</option>
+    <option value="de">&#x1F1E9;&#x1F1EA; Deutsch</option>
+    <option value="ro">&#x1F1F7;&#x1F1F4; Rom&#226;n&#259;</option>
+    <option value="hu">&#x1F1ED;&#x1F1FA; Magyar</option>
+    <option value="he">&#x1F1EE;&#x1F1F1; &#x05E2;&#x05D1;&#x05E8;&#x05D9;&#x05EA;</option>
+    <option value="ja">&#x1F1EF;&#x1F1F5; &#x65E5;&#x672C;&#x8A9E;</option>
+  </select>
+</header>
+
+<div class="tabs" id="tab-bar">
+  <button class="tab active" data-tab="status" data-i18n="tab_status">Status</button>
+  <button class="tab" data-tab="models" data-i18n="tab_models">Models</button>
+  <button class="tab" data-tab="arena" data-i18n="tab_arena">Arena</button>
+  <button class="tab" data-tab="benchmark" data-i18n="tab_bench">Benchmark</button>
+  <button class="tab" data-tab="marathon" data-i18n="tab_marathon">Marathon</button>
+  <button class="tab" data-tab="eval" data-i18n="tab_eval">Evaluation</button>
+  <button class="tab" data-tab="pool" data-i18n="tab_pool">Pool &amp; Memory</button>
+  <button class="tab" data-tab="runall" style="color:var(--green);font-weight:700" data-i18n="tab_runall">&#9654; Run All</button>
+</div>
+
+<div class="help-modal-bg" id="help-modal-bg" onclick="if(event.target===this)closeHelp()">
+  <div class="help-modal">
+    <button class="help-close" onclick="closeHelp()">&times;</button>
+    <h3 id="help-title"></h3>
+    <div id="help-body"></div>
+  </div>
+</div>
+
+<div class="panels">
+
+<!-- ─── STATUS ──────────────────────────────────────────────── -->
+<div class="panel active" id="panel-status">
+  <div class="card">
+    <h3><span data-i18n="st_bridge">Bridge Status</span> <button class="help-btn" onclick="showHelp('bridge-status')">?</button></h3>
+    <div id="bridge-status" class="output"></div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <h3><span data-i18n="st_mem">Memory Snapshot</span> <button class="help-btn" onclick="showHelp('memory-snapshot')">?</button></h3>
+      <div id="mem-snapshot" class="output"></div>
+      <button data-i18n="btn_refresh" onclick="loadMemory()" style="margin-top:8px">Refresh</button>
+    </div>
+    <div class="card">
+      <h3><span data-i18n="st_pool">Pool Status</span> <button class="help-btn" onclick="showHelp('pool-status')">?</button></h3>
+      <div id="pool-snapshot" class="output"></div>
+      <button data-i18n="btn_refresh" onclick="loadPool()" style="margin-top:8px">Refresh</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODELS ──────────────────────────────────────────────── -->
+<div class="panel" id="panel-models">
+  <div class="card">
+    <h3><span data-i18n="md_avail">Available Models</span> <button class="help-btn" onclick="showHelp('models')">?</button></h3>
+    <button data-i18n="md_scan" onclick="scanModels()">Scan Models</button>
+    <div id="models-table" style="margin-top:12px"></div>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="md_prompts">Prompt Library</span> <button class="help-btn" onclick="showHelp('prompt-library')">?</button></h3>
+    <button data-i18n="md_load" onclick="loadPrompts()">Load Prompts</button>
+    <span class="secondary" style="margin-left:8px">
+      <button class="secondary" data-i18n="md_random" onclick="randomPrompt()">Random Prompt</button>
+    </span>
+    <div id="prompts-output" class="output" style="margin-top:12px;max-height:300px"></div>
+  </div>
+</div>
+
+<!-- ─── ARENA ───────────────────────────────────────────────── -->
+<div class="panel" id="panel-arena">
+  <div class="card">
+    <h3><span data-i18n="ar_title">Arena — Parallel Inference + Judge</span> <button class="help-btn" onclick="showHelp('arena')">?</button></h3>
+    <label data-i18n="ar_select">Select Models (check 2+):</label>
+    <div id="arena-models" class="model-list" data-i18n="d_loading">Loading...</div>
+    <div class="row" style="margin-top:10px">
+      <div>
+        <label data-i18n="lbl_prompt">Prompt</label>
+        <textarea id="arena-prompt" placeholder="Enter prompt or use random..."></textarea>
+        <button class="secondary" data-i18n="ar_random" onclick="fillRandom('arena-prompt')">Random</button>
+      </div>
+      <div>
+        <label data-i18n="ar_sys">System Prompt (optional)</label>
+        <textarea id="arena-sys" placeholder="Optional system prompt"></textarea>
+        <label data-i18n="lbl_tokens">Max Tokens</label><input type="number" id="arena-tokens" value="256">
+        <label data-i18n="lbl_temp">Temperature</label><input type="number" id="arena-temp" value="0.7" step="0.1">
+      </div>
+    </div>
+    <button id="arena-run" data-i18n="ar_run" onclick="runArena()">Run Arena</button>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="ar_results">Arena Results</span> <button class="help-btn" onclick="showHelp('arena-results')">?</button></h3>
+    <div id="arena-output" class="output"></div>
+  </div>
+  <div class="card" id="arena-scores-card" style="display:none">
+    <h3><span data-i18n="ar_judge">Judge Scores</span> <button class="help-btn" onclick="showHelp('judge-scores')">?</button></h3>
+    <div id="arena-scores"></div>
+  </div>
+</div>
+
+<!-- ─── BENCHMARK ───────────────────────────────────────────── -->
+<div class="panel" id="panel-benchmark">
+  <div class="card">
+    <h3><span data-i18n="bm_title">Benchmark — Concurrency Scaling</span> <button class="help-btn" onclick="showHelp('benchmark')">?</button></h3>
+    <div class="row">
+      <div>
+        <label data-i18n="lbl_model">Model</label>
+        <select id="bench-model"></select>
+      </div>
+      <div>
+        <label data-i18n="bm_levels">Concurrency Levels (comma-sep)</label>
+        <input type="text" id="bench-levels" value="1,2,4">
+      </div>
+    </div>
+    <label data-i18n="lbl_prompt">Prompt</label>
+    <textarea id="bench-prompt" placeholder="Benchmark prompt...">Explain quicksort in 3 sentences.</textarea>
+    <div class="row">
+      <div><label data-i18n="lbl_tokens">Max Tokens</label><input type="number" id="bench-tokens" value="256"></div>
+      <div><label data-i18n="lbl_temp">Temperature</label><input type="number" id="bench-temp" value="0.7" step="0.1"></div>
+    </div>
+    <button id="bench-run" data-i18n="bm_run" onclick="runBenchmark()">Run Benchmark</button>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="bm_results">Benchmark Results</span> <button class="help-btn" onclick="showHelp('benchmark-results')">?</button></h3>
+    <div id="bench-output" class="output"></div>
+  </div>
+</div>
+
+<!-- ─── MARATHON ──────────────────────────────────────────────── -->
+<div class="panel" id="panel-marathon">
+  <div class="card">
+    <h3><span data-i18n="mr_title">Marathon — Multi-Round Testing</span> <button class="help-btn" onclick="showHelp('marathon')">?</button></h3>
+    <label data-i18n="ar_select">Select Models (check 2+):</label>
+    <div id="marathon-models" class="model-list" data-i18n="d_loading">Loading...</div>
+    <div class="row" style="margin-top:10px">
+      <div>
+        <label data-i18n="lbl_cat">Category</label>
+        <select id="marathon-cat">
+          <option value="reasoning" data-i18n="cat_reason">Reasoning</option>
+          <option value="coding" data-i18n="cat_coding">Coding</option>
+          <option value="creative" data-i18n="cat_creative">Creative</option>
+          <option value="knowledge" data-i18n="cat_knowledge">Knowledge</option>
+          <option value="math" data-i18n="cat_math">Math</option>
+          <option value="custom" data-i18n="cat_custom">Custom</option>
+        </select>
+      </div>
+      <div>
+        <label data-i18n="lbl_rounds">Rounds</label>
+        <input type="number" id="marathon-rounds" value="3" min="1" max="50">
+      </div>
+      <div>
+        <label data-i18n="lbl_tokens">Max Tokens</label>
+        <input type="number" id="marathon-tokens" value="256">
+      </div>
+    </div>
+    <label data-i18n="mr_custom">Custom Prompt (used when category=custom)</label>
+    <textarea id="marathon-prompt" placeholder="Leave blank for library prompts..."></textarea>
+    <button id="marathon-run" data-i18n="mr_start" onclick="runMarathon()">Start Marathon</button>
+    <button class="danger" id="marathon-stop" data-i18n="btn_stop" onclick="stopMarathon()" style="display:none;margin-left:8px">Stop</button>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="mr_leader">Leaderboard</span> <button class="help-btn" onclick="showHelp('leaderboard')">?</button></h3>
+    <div id="marathon-leaderboard"></div>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="mr_log">Round Log</span> <button class="help-btn" onclick="showHelp('round-log')">?</button></h3>
+    <div id="marathon-log" class="output" style="max-height:400px"></div>
+  </div>
+</div>
+
+<!-- ─── EVALUATION ──────────────────────────────────────────── -->
+<div class="panel" id="panel-eval">
+  <div class="card">
+    <h3><span data-i18n="ev_title">Evaluation Engine</span> <button class="help-btn" onclick="showHelp('evaluation')">?</button></h3>
+    <div class="row">
+      <div>
+        <label data-i18n="lbl_model">Model</label>
+        <select id="eval-model"></select>
+      </div>
+      <div>
+        <label data-i18n="lbl_cat">Category</label>
+        <select id="eval-cat">
+          <option value="reasoning" data-i18n="cat_reason">Reasoning</option>
+          <option value="coding" data-i18n="cat_coding">Coding</option>
+          <option value="math" data-i18n="cat_math">Math</option>
+          <option value="knowledge" data-i18n="cat_knowledge">Knowledge</option>
+          <option value="creative" data-i18n="cat_creative">Creative</option>
+        </select>
+      </div>
+    </div>
+    <label data-i18n="lbl_prompt">Prompt</label>
+    <textarea id="eval-prompt" placeholder="Enter prompt..."></textarea>
+    <button class="secondary" data-i18n="ev_random" onclick="fillRandom('eval-prompt')" style="margin-bottom:10px">Random Prompt</button>
+    <div class="row">
+      <button id="eval-infer" data-i18n="ev_infer" onclick="runEvalInference()">1. Run Inference</button>
+      <button id="eval-run" data-i18n="ev_eval" onclick="runEvaluation()" disabled>2. Evaluate Response</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="ev_output">Inference Output</span> <button class="help-btn" onclick="showHelp('inference-output')">?</button></h3>
+    <div id="eval-response" class="output"></div>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="ev_result">Evaluation Result</span> <button class="help-btn" onclick="showHelp('eval-result')">?</button></h3>
+    <div id="eval-result" class="output"></div>
+  </div>
+</div>
+
+<!-- ─── POOL & MEMORY ──────────────────────────────────────── -->
+<div class="panel" id="panel-pool">
+  <div class="card">
+    <h3><span data-i18n="pl_title">Model Pool Management</span> <button class="help-btn" onclick="showHelp('pool-mgmt')">?</button></h3>
+    <label data-i18n="pl_select">Select Models to Preload:</label>
+    <div id="pool-models" class="model-list" data-i18n="d_loading">Loading...</div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button data-i18n="pl_preload" onclick="preloadPool()">Preload Selected</button>
+      <button class="danger" data-i18n="pl_drain" onclick="drainPool()">Drain All</button>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <h3><span data-i18n="pl_pool">Pool Status</span> <button class="help-btn" onclick="showHelp('pool-detail')">?</button></h3>
+      <div id="pool-detail" class="output"></div>
+      <button data-i18n="btn_refresh" onclick="refreshPoolDetail()" style="margin-top:8px">Refresh</button>
+    </div>
+    <div class="card">
+      <h3><span data-i18n="pl_mem">Memory Monitor</span> <button class="help-btn" onclick="showHelp('memory-monitor')">?</button></h3>
+      <div id="mem-detail" class="output"></div>
+      <button data-i18n="btn_refresh" onclick="refreshMemDetail()" style="margin-top:8px">Refresh</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="pl_diag">Bottleneck Diagnosis</span> <button class="help-btn" onclick="showHelp('diagnose')">?</button></h3>
+    <button data-i18n="pl_diag_run" onclick="runDiagnose()">Run Diagnosis</button>
+    <div id="diagnose-output" class="output" style="margin-top:8px"></div>
+  </div>
+  <div class="card">
+    <h3><span data-i18n="pl_rec">Performance Recommendations</span> <button class="help-btn" onclick="showHelp('recommendations')">?</button></h3>
+    <button data-i18n="pl_rec_run" onclick="runRecommendations()">Get Recommendations</button>
+    <div id="recommend-output" class="output" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ─── RUN ALL ─────────────────────────────────────────────── -->
+<div class="panel" id="panel-runall">
+  <div class="card">
+    <h3><span data-i18n="ra_title">&#9654; Run All Tests</span> <button class="help-btn" onclick="showHelp('run-all')">?</button></h3>
+    <p data-i18n="ra_desc" style="color:var(--muted);font-size:13px;margin-bottom:12px">Runs every endpoint test 3 times each in random order with random model/prompt selection.</p>
+    <div class="row" style="align-items:center;margin-bottom:12px">
+      <div style="flex:0 0 auto"><label data-i18n="ra_repeats">Repeats per test</label><input type="number" id="runall-repeats" value="3" min="1" max="20" style="width:80px"></div>
+      <div style="flex:0 0 auto"><label data-i18n="ra_tokens">Max tokens</label><input type="number" id="runall-tokens" value="32" style="width:80px"></div>
+      <div style="flex:0 0 auto;align-self:flex-end">
+        <button id="runall-btn" data-i18n="ra_run" onclick="runAllTests()" style="background:var(--green)">&#9654; Run All Tests</button>
+        <button class="danger" id="runall-stop" data-i18n="btn_stop" onclick="_runAllStop=true" style="display:none;margin-left:8px">Stop</button>
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px">
+        <span id="runall-progress-text" data-i18n="ra_ready">Ready</span>
+        <span id="runall-progress-pct">0%</span>
+      </div>
+      <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+        <div id="runall-bar" style="height:100%;width:0%;background:var(--green);border-radius:4px;transition:width .3s"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;margin-bottom:12px;font-size:14px;font-weight:600">
+      <span style="color:var(--green)">&#10003; <span id="runall-passed">0</span></span>
+      <span style="color:var(--red)">&#10007; <span id="runall-failed">0</span></span>
+      <span style="color:var(--yellow)">&#9888; <span id="runall-skipped">0</span></span>
+      <span style="color:var(--muted)"><span data-i18n="ra_total">Total:</span> <span id="runall-total">0</span></span>
+    </div>
+  </div>
+  <div class="card">
+    <h3 data-i18n="ra_log">Results Log</h3>
+    <div id="runall-log" style="max-height:600px;overflow-y:auto"></div>
+  </div>
+</div>
+
+</div><!-- .panels -->
+
+<script>
+/* ─── Config ──────────────────────────────────────────────── */
+const BASE = location.origin;
+let _models = [];
+let _marathonStop = false;
+let _lastInferResult = null;
+let _marathonResults = [];
+
+/* ─── Helpers ─────────────────────────────────────────────── */
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(BASE + path, opts);
+  const text = await r.text();
+  try { return { ok: r.ok, status: r.status, data: JSON.parse(text) }; }
+  catch { return { ok: r.ok, status: r.status, data: text }; }
+}
+
+function $(id) { return document.getElementById(id); }
+function pretty(obj) { return JSON.stringify(obj, null, 2); }
+
+function getChecked(containerId) {
+  return [...$(containerId).querySelectorAll('input:checked')].map(c => c.value);
+}
+
+function setLoading(btnId, on) {
+  const b = $(btnId);
+  if (on) { b.disabled = true; b.dataset.orig = b.innerHTML; b.innerHTML += '<span class="spinner"></span>'; }
+  else { b.disabled = false; b.innerHTML = b.dataset.orig || b.innerHTML.replace(/<span.*<\/span>/, ''); if (b.dataset.i18n) b.textContent = t(b.dataset.i18n); }
+}
+
+function populateModelCheckboxes(containerId) {
+  const el = $(containerId);
+  if (!_models.length) { el.innerHTML = '<em>No models found. Scan models first.</em>'; return; }
+  el.innerHTML = _models.map(m =>
+    `<div class="model-item"><input type="checkbox" value="${esc(m.path || m)}"><span>${esc(m.name || m.path || m)}</span></div>`
+  ).join('');
+}
+
+function populateModelSelect(selectId) {
+  const el = $(selectId);
+  el.innerHTML = '<option value="">Select model...</option>' +
+    _models.map(m => `<option value="${esc(m.path || m)}">${esc(m.name || m.path || m)}</option>`).join('');
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
+function renderScoreBars(container, scores) {
+  let html = '';
+  for (const [key, val] of Object.entries(scores)) {
+    const pct = Math.round(val * 100);
+    const color = pct >= 70 ? 'var(--green)' : pct >= 40 ? 'var(--yellow)' : 'var(--red)';
+    html += `<div class="score-bar">
+      <span class="score-label">${esc(key)}</span>
+      <div class="bar"><div class="fill" style="width:${pct}%;background:${color}"></div></div>
+      <span class="score-value">${pct}%</span>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+/* ─── Tab switching ───────────────────────────────────────── */
+$('tab-bar').addEventListener('click', e => {
+  if (!e.target.classList.contains('tab')) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  e.target.classList.add('active');
+  $('panel-' + e.target.dataset.tab).classList.add('active');
+});
+
+/* ─── Status ──────────────────────────────────────────────── */
+async function checkStatus() {
+  try {
+    const r = await api('GET', '/__swarm/status');
+    const dot = $('status-dot');
+    const txt = $('status-text');
+    if (r.ok && r.data.bridge) {
+      dot.className = 'ok';
+      txt.textContent = t('d_bridge_ok') + ' — ' + (r.data.engine || 'unknown engine');
+    } else {
+      dot.className = 'err';
+      txt.textContent = t('d_bridge_err');
+    }
+    $('bridge-status').textContent = pretty(r.data);
+  } catch (e) {
+    $('status-dot').className = 'err';
+    $('status-text').textContent = t('d_no_server');
+    $('bridge-status').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function loadMemory() {
+  const r = await api('GET', '/__swarm/memory');
+  $('mem-snapshot').textContent = r.ok ? pretty(r.data) : 'Error: ' + pretty(r.data);
+}
+
+async function loadPool() {
+  const r = await api('GET', '/__swarm/pool');
+  $('pool-snapshot').textContent = r.ok ? pretty(r.data) : 'Error: ' + pretty(r.data);
+}
+
+/* ─── Models ──────────────────────────────────────────────── */
+async function scanModels() {
+  const r = await api('GET', '/__swarm/models');
+  if (!r.ok) { $('models-table').innerHTML = '<p class="badge err">Failed to scan</p>'; return; }
+  _models = r.data.models || r.data || [];
+  let html = `<table><tr><th>#</th><th>Name</th><th>Path</th><th>Size</th></tr>`;
+  _models.forEach((m, i) => {
+    const name = m.name || m.path || m;
+    const path = m.path || m;
+    const size = m.size_mb ? m.size_mb.toFixed(0) + ' MB' : '—';
+    html += `<tr><td>${i+1}</td><td>${esc(name)}</td><td style="font-size:11px;color:var(--muted)">${esc(path)}</td><td>${size}</td></tr>`;
+  });
+  html += '</table>';
+  $('models-table').innerHTML = html;
+  // Populate all model selectors
+  populateModelCheckboxes('arena-models');
+  populateModelCheckboxes('marathon-models');
+  populateModelCheckboxes('pool-models');
+  populateModelSelect('bench-model');
+  populateModelSelect('eval-model');
+}
+
+async function loadPrompts() {
+  const r = await api('GET', '/__swarm/prompts');
+  $('prompts-output').textContent = r.ok ? pretty(r.data) : 'Error';
+}
+
+async function randomPrompt() {
+  const r = await api('GET', '/__swarm/random-prompt');
+  $('prompts-output').textContent = r.ok ? pretty(r.data) : 'Error';
+}
+
+async function fillRandom(targetId) {
+  const r = await api('GET', '/__swarm/random-prompt');
+  if (r.ok && r.data.prompt) { $(targetId).value = r.data.prompt; }
+}
+
+/* ─── Arena ───────────────────────────────────────────────── */
+async function runArena() {
+  const models = getChecked('arena-models');
+  if (models.length < 2) { alert(t('d_select2')); return; }
+  setLoading('arena-run', true);
+  $('arena-output').textContent = t('d_loading');
+  try {
+    const r = await api('POST', '/__swarm/arena', {
+      models,
+      prompt: $('arena-prompt').value,
+      system_prompt: $('arena-sys').value,
+      max_tokens: +$('arena-tokens').value,
+      temperature: +$('arena-temp').value,
+    });
+    $('arena-output').textContent = pretty(r.data);
+    if (r.ok && r.data.judge) {
+      $('arena-scores-card').style.display = '';
+      renderScoreBars($('arena-scores'), r.data.judge.scores || r.data.judge);
+    }
+  } catch (e) { $('arena-output').textContent = 'Error: ' + e.message; }
+  setLoading('arena-run', false);
+}
+
+/* ─── Benchmark ──────────────────────────────────────────── */
+async function runBenchmark() {
+  const model = $('bench-model').value;
+  if (!model) { alert(t('d_select1')); return; }
+  const levels = $('bench-levels').value.split(',').map(Number).filter(n => n > 0);
+  setLoading('bench-run', true);
+  $('bench-output').textContent = t('d_loading');
+  try {
+    const r = await api('POST', '/__swarm/benchmark', {
+      model,
+      prompt: $('bench-prompt').value,
+      levels,
+      max_tokens: +$('bench-tokens').value,
+      temperature: +$('bench-temp').value,
+    });
+    $('bench-output').textContent = pretty(r.data);
+  } catch (e) { $('bench-output').textContent = 'Error: ' + e.message; }
+  setLoading('bench-run', false);
+}
+
+/* ─── Marathon ───────────────────────────────────────────── */
+async function runMarathon() {
+  const models = getChecked('marathon-models');
+  if (models.length < 2) { alert(t('d_select2')); return; }
+  _marathonStop = false;
+  _marathonResults = [];
+  $('marathon-stop').style.display = 'inline-block';
+  setLoading('marathon-run', true);
+  $('marathon-log').textContent = '';
+  const rounds = +$('marathon-rounds').value || 3;
+  const category = $('marathon-cat').value;
+  const customPrompt = $('marathon-prompt').value;
+
+  for (let i = 0; i < rounds && !_marathonStop; i++) {
+    $('marathon-log').textContent += `\n── Round ${i + 1}/${rounds} ──\n`;
+    try {
+      const body = { models, category, max_tokens: +$('marathon-tokens').value, temperature: 0.7 };
+      if (category === 'custom' && customPrompt) body.prompt = customPrompt;
+      const r = await api('POST', '/__swarm/marathon-round', body);
+      _marathonResults.push(r.data);
+      $('marathon-log').textContent += pretty(r.data) + '\n';
+      updateLeaderboard();
+    } catch (e) {
+      $('marathon-log').textContent += 'Error: ' + e.message + '\n';
+    }
+  }
+  setLoading('marathon-run', false);
+  $('marathon-stop').style.display = 'none';
+}
+
+function stopMarathon() { _marathonStop = true; }
+
+function updateLeaderboard() {
+  const scores = {};
+  _marathonResults.forEach(r => {
+    if (!r || !r.results) return;
+    r.results.forEach(res => {
+      const name = res.model || res.model_path || 'unknown';
+      if (!scores[name]) scores[name] = { wins: 0, total: 0, avgScore: 0 };
+      scores[name].total++;
+      if (res.rank === 1) scores[name].wins++;
+      scores[name].avgScore += (res.score || 0);
+    });
+  });
+  let html = '<table><tr><th>Model</th><th>Wins</th><th>Rounds</th><th>Avg Score</th></tr>';
+  Object.entries(scores).sort((a, b) => b[1].wins - a[1].wins).forEach(([name, s]) => {
+    html += `<tr><td>${esc(name)}</td><td>${s.wins}</td><td>${s.total}</td><td>${(s.avgScore / s.total).toFixed(2)}</td></tr>`;
+  });
+  html += '</table>';
+  $('marathon-leaderboard').innerHTML = html;
+}
+
+/* ─── Evaluation ─────────────────────────────────────────── */
+async function runEvalInference() {
+  const model = $('eval-model').value;
+  if (!model) { alert(t('d_select1')); return; }
+  setLoading('eval-infer', true);
+  $('eval-response').textContent = t('d_loading');
+  try {
+    const r = await api('POST', '/__swarm/inference', {
+      model,
+      prompt: $('eval-prompt').value,
+      max_tokens: 512,
+      temperature: 0.7,
+    });
+    _lastInferResult = r.data;
+    $('eval-response').textContent = pretty(r.data);
+    $('eval-run').disabled = false;
+  } catch (e) { $('eval-response').textContent = 'Error: ' + e.message; }
+  setLoading('eval-infer', false);
+}
+
+async function runEvaluation() {
+  if (!_lastInferResult) return;
+  setLoading('eval-run', true);
+  $('eval-result').textContent = t('d_loading');
+  try {
+    const text = _lastInferResult.text || _lastInferResult.response || '';
+    const r = await api('POST', '/__swarm/evaluate', {
+      response: text,
+      category: $('eval-cat').value,
+      prompt: $('eval-prompt').value,
+    });
+    $('eval-result').textContent = pretty(r.data);
+  } catch (e) { $('eval-result').textContent = 'Error: ' + e.message; }
+  setLoading('eval-run', false);
+}
+
+/* ─── Pool & Memory ──────────────────────────────────────── */
+async function preloadPool() {
+  const models = getChecked('pool-models');
+  if (!models.length) { alert(t('d_select1p')); return; }
+  const r = await api('POST', '/__swarm/pool/preload', { models });
+  $('pool-detail').textContent = pretty(r.data);
+}
+
+async function drainPool() {
+  const r = await api('POST', '/__swarm/pool/drain', {});
+  $('pool-detail').textContent = pretty(r.data);
+}
+
+async function refreshPoolDetail() {
+  const r = await api('GET', '/__swarm/pool');
+  $('pool-detail').textContent = r.ok ? pretty(r.data) : 'Error';
+}
+
+async function refreshMemDetail() {
+  const r = await api('GET', '/__swarm/memory');
+  $('mem-detail').textContent = r.ok ? pretty(r.data) : 'Error';
+}
+
+async function runDiagnose() {
+  const r = await api('POST', '/__swarm/diagnose', { results: _marathonResults });
+  $('diagnose-output').textContent = pretty(r.data);
+}
+
+async function runRecommendations() {
+  const result = _lastInferResult || (_marathonResults.length ? _marathonResults[_marathonResults.length - 1] : {});
+  const r = await api('POST', '/__swarm/recommendations', { result });
+  $('recommend-output').textContent = pretty(r.data);
+}
+
+/* ─── Help System ─────────────────────────────────────────── */
+const HELP = {
+  'bridge-status': {
+    title: 'Bridge Status',
+    body: `<p>Shows whether the <strong>Swarm Bridge</strong> (swarm_bridge.py) is connected to the Local_LLM Core engine.</p>
+<div class="hlabel">What it checks</div>
+<ul>
+  <li><code>bridge</code> — <em>true</em> if Local_LLM's <code>Core/swarm/state.py</code> was imported successfully</li>
+  <li><code>engine</code> — reports which inference backend is active (e.g. llama-cpp-python)</li>
+</ul>
+<div class="hlabel">How it works</div>
+<p>Calls <code>GET /__swarm/status</code>. The server checks <code>swarm_bridge.available()</code> and returns a JSON with bridge &amp; engine fields.</p>`
+  },
+  'memory-snapshot': {
+    title: 'Memory Snapshot',
+    body: `<p>Reads the current process memory usage via <strong>psutil</strong>.</p>
+<div class="hlabel">Fields returned</div>
+<ul>
+  <li><code>rss_mb</code> — Resident Set Size (physical RAM used by the server process)</li>
+  <li><code>system_total_mb</code> / <code>system_available_mb</code> — Total and free system RAM</li>
+</ul>
+<div class="hlabel">How it works</div>
+<p>Calls <code>GET /__swarm/memory</code> → <code>swarm_bridge.memory_snapshot()</code> → uses <code>psutil.Process().memory_info()</code>.</p>`
+  },
+  'pool-status': {
+    title: 'Pool Status',
+    body: `<p>Shows the state of the <strong>Model Pool</strong> — which models are currently loaded in memory and ready for inference.</p>
+<div class="hlabel">How it works</div>
+<p>Calls <code>GET /__swarm/pool</code> → <code>swarm_bridge.pool_status()</code>. Returns a JSON listing each preloaded model and its memory footprint.</p>
+<p>Models stay in the pool until explicitly drained or the server shuts down.</p>`
+  },
+  'models': {
+    title: 'Available Models',
+    body: `<p>Scans the configured model directories for <strong>.gguf</strong> files (quantised LLM models).</p>
+<div class="hlabel">How it works</div>
+<p>Calls <code>GET /__swarm/models</code> → <code>swarm_bridge.list_models()</code> → <code>discover_models()</code> from Local_LLM.</p>
+<p>Each model entry includes its file path, friendly name, and size in MB. These models populate the selection lists across Arena, Benchmark, Marathon, Evaluation, and Pool tabs.</p>`
+  },
+  'prompt-library': {
+    title: 'Prompt Library',
+    body: `<p>A curated library of <strong>200+ test prompts</strong> organized by category (reasoning, coding, math, creative, knowledge), each with ground-truth evaluation metadata.</p>
+<div class="hlabel">How it works</div>
+<p><code>GET /__swarm/prompts</code> returns the full categorized library.<br>
+<code>GET /__swarm/random-prompt</code> picks a random one for quick testing.</p>
+<p>Source: <code>Core/swarm/prompt_library.py</code> from Local_LLM.</p>`
+  },
+  'arena': {
+    title: 'Arena — Parallel Inference + Judge',
+    body: `<p>Runs the <strong>same prompt</strong> against <strong>2+ models in parallel</strong>, then passes all outputs to the <strong>Judge</strong> for scoring and ranking.</p>
+<div class="hlabel">Parameters</div>
+<ul>
+  <li><strong>Models</strong> — Select 2 or more from the checkbox list</li>
+  <li><strong>Prompt</strong> — The question/task. Use "Random" to pull from the library</li>
+  <li><strong>System Prompt</strong> — Optional personality/instruction prefix</li>
+  <li><strong>Max Tokens / Temperature</strong> — Control output length and randomness</li>
+</ul>
+<div class="hlabel">How it works</div>
+<p>Calls <code>POST /__swarm/arena</code> → <code>swarm_bridge.run_arena_sync()</code> → runs each model via <code>run_inference_sync()</code> in a ThreadPoolExecutor, then calls <code>judge_results()</code> which scores across 7 metrics: consensus, agreement, relevance, completeness, coherence, speed, efficiency.</p>`
+  },
+  'arena-results': {
+    title: 'Arena Results',
+    body: `<p>Displays the raw JSON output from the arena run — each model's response text, token count, elapsed time (tok/s), and any errors.</p>
+<p>Compare outputs side-by-side to see qualitative differences before looking at the Judge scores.</p>`
+  },
+  'judge-scores': {
+    title: 'Judge Scores',
+    body: `<p>Visual bar chart of the <strong>7 judge metrics</strong> from the arena run.</p>
+<div class="hlabel">Metrics &amp; Weights</div>
+<ul>
+  <li><strong>Consensus</strong> (25%) — Do models agree on the answer?</li>
+  <li><strong>Agreement</strong> (15%) — Similarity between outputs</li>
+  <li><strong>Relevance</strong> (15%) — How relevant is the answer to the prompt?</li>
+  <li><strong>Completeness</strong> (10%) — Did the model fully address the question?</li>
+  <li><strong>Coherence</strong> (10%) — Is the output well-structured and logical?</li>
+  <li><strong>Speed</strong> (15%) — Tokens per second performance</li>
+  <li><strong>Efficiency</strong> (10%) — Speed relative to output quality</li>
+</ul>
+<p>Scores shown as percentage bars with green (&ge;70%), yellow (&ge;40%), or red (&lt;40%) coloring.</p>`
+  },
+  'benchmark': {
+    title: 'Benchmark — Concurrency Scaling',
+    body: `<p>Tests how a <strong>single model</strong> performs under increasing concurrency load. Shows whether throughput scales linearly or bottlenecks.</p>
+<div class="hlabel">Parameters</div>
+<ul>
+  <li><strong>Model</strong> — The model to benchmark</li>
+  <li><strong>Concurrency Levels</strong> — Comma-separated list (e.g. 1,2,4) — number of parallel requests at each level</li>
+  <li><strong>Prompt</strong> — Test prompt used for each request</li>
+</ul>
+<div class="hlabel">How it works</div>
+<p>Calls <code>POST /__swarm/benchmark</code> → <code>swarm_bridge.run_benchmark_sync()</code>. For each concurrency level, fires N parallel inference calls and measures aggregate tok/s, latency, and throughput.</p>`
+  },
+  'benchmark-results': {
+    title: 'Benchmark Results',
+    body: `<p>Raw JSON output from the benchmark run. Shows per-level statistics:</p>
+<ul>
+  <li><code>concurrency</code> — Number of parallel requests</li>
+  <li><code>total_tokens</code> — Combined output tokens</li>
+  <li><code>elapsed</code> — Wall-clock time</li>
+  <li><code>tok_per_sec</code> — Aggregate throughput</li>
+</ul>
+<p>Compare levels to see if your hardware can handle parallel inference or if it degrades under load.</p>`
+  },
+  'marathon': {
+    title: 'Marathon — Multi-Round Testing',
+    body: `<p>Runs <strong>multiple rounds</strong> of arena-style competitions. Each round pulls a prompt (from library or custom), runs all selected models, and judges the results. Builds a cumulative leaderboard.</p>
+<div class="hlabel">Parameters</div>
+<ul>
+  <li><strong>Models</strong> — 2+ models to compete</li>
+  <li><strong>Category</strong> — Prompt category (reasoning, coding, math, etc.) or "custom"</li>
+  <li><strong>Rounds</strong> — How many rounds to run (1–50)</li>
+  <li><strong>Custom Prompt</strong> — Used only when category="custom"</li>
+</ul>
+<div class="hlabel">How it works</div>
+<p>Loops N rounds, calling <code>POST /__swarm/marathon-round</code> each time. Each round is a mini-arena with judging. The leaderboard updates live after each round. Press "Stop" to abort early.</p>`
+  },
+  'leaderboard': {
+    title: 'Leaderboard',
+    body: `<p>Cumulative marathon standings. Shows each model's <strong>wins</strong>, total <strong>rounds played</strong>, and <strong>average score</strong>.</p>
+<p>Updates in real-time after each round completes. Models are ranked by win count — higher wins = better overall performer across varied prompts.</p>`
+  },
+  'round-log': {
+    title: 'Round Log',
+    body: `<p>Detailed log of every marathon round. Each entry shows:</p>
+<ul>
+  <li>Round number and prompt used</li>
+  <li>Each model's response, tok/s, and elapsed time</li>
+  <li>Judge scores and rankings for that round</li>
+</ul>
+<p>Scroll through to inspect individual rounds or spot patterns (e.g. a model that excels at coding but struggles with math).</p>`
+  },
+  'evaluation': {
+    title: 'Evaluation Engine',
+    body: `<p>Two-step workflow: <strong>1) Run Inference</strong> to generate a response, then <strong>2) Evaluate</strong> the response against ground-truth criteria.</p>
+<div class="hlabel">Step 1 — Inference</div>
+<p>Sends the prompt to the selected model and displays the raw output.</p>
+<div class="hlabel">Step 2 — Evaluate</div>
+<p>Calls <code>POST /__swarm/evaluate</code> → <code>swarm_bridge.evaluate()</code> which uses the <strong>Evaluation Engine</strong> (<code>evaluation_engine.py</code>) supporting 11 eval types: EXACT match, NUMERIC tolerance, CONTAINS_ALL, CODE_EXEC, SEMANTIC similarity, RUBRIC, and more.</p>
+<p>The category determines which evaluation strategy is applied.</p>`
+  },
+  'inference-output': {
+    title: 'Inference Output',
+    body: `<p>Raw JSON from the inference call. Includes:</p>
+<ul>
+  <li><code>text</code> / <code>response</code> — The model's generated text</li>
+  <li><code>tok_per_sec</code> — Generation speed</li>
+  <li><code>elapsed</code> — Wall-clock time</li>
+  <li><code>prompt_tokens</code> / <code>completion_tokens</code> — Token counts</li>
+</ul>
+<p>This output is passed to Step 2 (Evaluate) automatically.</p>`
+  },
+  'eval-result': {
+    title: 'Evaluation Result',
+    body: `<p>Shows whether the model's response passed the ground-truth evaluation, along with the evaluation type used, expected answer, and any scoring details.</p>
+<p>Common results: <code>passed: true/false</code>, <code>eval_type</code>, <code>score</code>, <code>details</code> explaining why it passed or failed.</p>`
+  },
+  'pool-mgmt': {
+    title: 'Model Pool Management',
+    body: `<p>Pre-load models into memory so subsequent inference calls are instant (no load-from-disk delay).</p>
+<div class="hlabel">Preload</div>
+<p>Select models and click <strong>Preload Selected</strong> → calls <code>POST /__swarm/pool/preload</code>. Each model is loaded into RAM/VRAM and kept warm.</p>
+<div class="hlabel">Drain</div>
+<p>Click <strong>Drain All</strong> → calls <code>POST /__swarm/pool/drain</code>. Unloads all models from memory. Use this to free RAM before loading different models.</p>`
+  },
+  'pool-detail': {
+    title: 'Pool Status (Detail)',
+    body: `<p>Detailed view of which models are currently loaded in the pool, their memory footprint, and load timestamps.</p>
+<p>Click <strong>Refresh</strong> to re-query the pool state after preloading or draining.</p>`
+  },
+  'memory-monitor': {
+    title: 'Memory Monitor',
+    body: `<p>Real-time memory usage for the server process and the overall system.</p>
+<ul>
+  <li><code>rss_mb</code> — Physical memory used by the Python server</li>
+  <li><code>system_available_mb</code> — Free RAM on the machine</li>
+</ul>
+<p>Monitor this while preloading models or running inference to ensure you don't exceed available memory.</p>`
+  },
+  'diagnose': {
+    title: 'Bottleneck Diagnosis',
+    body: `<p>Analyzes inference results (from Marathon or Arena runs) and memory snapshots to identify <strong>performance bottlenecks</strong>.</p>
+<div class="hlabel">How it works</div>
+<p>Calls <code>POST /__swarm/diagnose</code> → <code>swarm_bridge.diagnose()</code> → <code>diagnose_bottleneck()</code> from Local_LLM's state module.</p>
+<p>Looks for patterns like: memory pressure, slow tok/s, high latency variance, concurrency degradation. Returns actionable findings.</p>`
+  },
+  'recommendations': {
+    title: 'Performance Recommendations',
+    body: `<p>Takes the latest inference result and generates <strong>optimization tips</strong> specific to your hardware and configuration.</p>
+<div class="hlabel">How it works</div>
+<p>Calls <code>POST /__swarm/recommendations</code> → <code>swarm_bridge.recommendations()</code>. Analyzes tok/s, model size, GPU layer usage, thread count, and memory, then suggests improvements like adjusting <code>n_gpu_layers</code>, changing quantization, or tuning <code>n_threads</code>.</p>`
+  },
+};
+
+function showHelp(key) {
+  const h = HELP[key];
+  if (!h) return;
+  $('help-title').textContent = h.title;
+  $('help-body').innerHTML = h.body;
+  $('help-modal-bg').classList.add('show');
+}
+function closeHelp() { $('help-modal-bg').classList.remove('show'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHelp(); });
+
+/* ─── Run All Engine ──────────────────────────────────────── */
+let _runAllStop = false;
+
+function _pick(arr, n) {
+  const a = [...arr].sort(() => Math.random() - .5);
+  return a.slice(0, Math.min(n, a.length));
+}
+function _randModel() {
+  return _models.length ? (_models[Math.floor(Math.random()*_models.length)].path || _models[0]) : 'test.gguf';
+}
+function _randModels(n) {
+  if (!_models.length) return ['a.gguf','b.gguf'];
+  return _pick(_models, n).map(m => m.path || m);
+}
+const CATEGORIES = ['reasoning','coding','creative','knowledge','math'];
+function _randCat() { return CATEGORIES[Math.floor(Math.random()*CATEGORIES.length)]; }
+
+function _buildTests(maxTok) {
+  return [
+    // GET endpoints
+    { name:'GET /status',         fn: async()=>{ const r=await api('GET','/__swarm/status');   return {ok:r.status===200, detail:`bridge=${r.data?.available}`}; }},
+    { name:'GET /memory',         fn: async()=>{ const r=await api('GET','/__swarm/memory');   return {ok:r.status===200, detail:`rss=${r.data?.process_rss_mb}MB`}; }},
+    { name:'GET /pool',           fn: async()=>{ const r=await api('GET','/__swarm/pool');     return {ok:r.status===200, detail:`size=${r.data?.size}`}; }},
+    { name:'GET /models',         fn: async()=>{ const r=await api('GET','/__swarm/models');   const c=(r.data?.models||r.data||[]).length; return {ok:r.status===200, detail:`count=${c}`}; }},
+    { name:'GET /prompts',        fn: async()=>{ const r=await api('GET','/__swarm/prompts');  return {ok:r.status===200, detail:typeof r.data}; }},
+    { name:'GET /random-prompt',  fn: async()=>{ const r=await api('GET','/__swarm/random-prompt'); return {ok:r.status===200&&!!r.data?.prompt, detail:(r.data?.prompt||"").slice(0,60)}; }},
+    // POST endpoints
+    { name:'POST /arena',         needs:'models', fn: async()=>{ const rp=await api('GET','/__swarm/random-prompt'); const r=await api('POST','/__swarm/arena',{models:_randModels(2),prompt:rp.data?.prompt||'hello',max_tokens:maxTok,temperature:0.7}); return {ok:r.status===200, detail:r.data?.error||'scores='+JSON.stringify(r.data?.judge||{}).slice(0,50)}; }},
+    { name:'POST /benchmark',     needs:'models', fn: async()=>{ const r=await api('POST','/__swarm/benchmark',{model:_randModel(),prompt:'Explain quicksort briefly.',levels:[1],max_tokens:maxTok,temperature:0.7}); return {ok:r.status===200, detail:JSON.stringify(r.data).slice(0,60)}; }},
+    { name:'POST /inference',     needs:'models', fn: async()=>{ const rp=await api('GET','/__swarm/random-prompt'); const r=await api('POST','/__swarm/inference',{model:_randModel(),prompt:rp.data?.prompt||'hi',max_tokens:maxTok,temperature:0.7}); return {ok:r.status===200, detail:(r.data?.text||"").slice(0,60)||JSON.stringify(r.data).slice(0,60)}; }},
+    { name:'POST /evaluate',      fn: async()=>{ const r=await api('POST','/__swarm/evaluate',{response:'The answer is 42.',category:_randCat(),prompt:'What is 6*7?'}); return {ok:r.status===200, detail:`score=${r.data?.score} passed=${r.data?.passed}`}; }},
+    { name:'POST /marathon-round', needs:'models', fn: async()=>{ const r=await api('POST','/__swarm/marathon-round',{models:_randModels(2),category:_randCat(),max_tokens:maxTok,temperature:0.7}); return {ok:r.status===200, detail:r.data?.error||JSON.stringify(r.data).slice(0,60)}; }},
+    { name:'POST /diagnose',      fn: async()=>{ const r=await api('POST','/__swarm/diagnose',{results:[{model:'test.gguf',tok_per_sec:10,elapsed:1.5}]}); return {ok:r.status===200, detail:r.data?.bottleneck||'ok'}; }},
+    { name:'POST /pool/preload',  fn: async()=>{ const r=await api('POST','/__swarm/pool/preload',{models:[]}); return {ok:r.status===200, detail:`loaded=${r.data?.loaded}`}; }},
+    { name:'POST /pool/drain',    fn: async()=>{ const r=await api('POST','/__swarm/pool/drain',{}); return {ok:r.status===200, detail:`drained=${r.data?.drained}`}; }},
+    { name:'POST /recommendations',fn: async()=>{ const r=await api('POST','/__swarm/recommendations',{result:{tok_per_sec:5,elapsed:10,model:'test.gguf'}}); return {ok:r.status===200, detail:`tips=${(r.data?.tips||[]).length}`}; }},
+    { name:'POST /nonexistent',   fn: async()=>{ const r=await api('POST','/__swarm/nonexistent',{}); return {ok:r.status===404||r.status===400, detail:`status=${r.status}`}; }},
+  ];
+}
+
+async function runAllTests() {
+  const repeats = +$('runall-repeats').value || 3;
+  const maxTok = +$('runall-tokens').value || 32;
+  _runAllStop = false;
+  $('runall-stop').style.display = 'inline-block';
+  $('runall-btn').disabled = true;
+  $('runall-log').innerHTML = '';
+  let passed = 0, failed = 0, skipped = 0;
+
+  // Ensure models are loaded
+  if (!_models.length) {
+    const mr = await api('GET', '/__swarm/models');
+    _models = mr.data?.models || mr.data || [];
+  }
+  const hasModels = _models.length > 0;
+
+  // Build test list: each test repeated N times, then shuffled
+  const base = _buildTests(maxTok);
+  let tests = [];
+  for (let i = 0; i < repeats; i++) {
+    base.forEach(td => tests.push({...td, round: i+1}));
+  }
+  // Fisher-Yates shuffle
+  for (let i = tests.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [tests[i], tests[j]] = [tests[j], tests[i]];
+  }
+
+  const total = tests.length;
+  $('runall-total').textContent = total;
+  $('runall-passed').textContent = 0;
+  $('runall-failed').textContent = 0;
+  $('runall-skipped').textContent = 0;
+
+  for (let idx = 0; idx < tests.length; idx++) {
+    if (_runAllStop) break;
+    const td = tests[idx];
+    const pct = Math.round(((idx+1)/total)*100);
+    $('runall-bar').style.width = pct + '%';
+    $('runall-progress-pct').textContent = pct + '%';
+    $('runall-progress-text').textContent = `Running ${idx+1}/${total}: ${td.name} (round ${td.round})`;
+
+    // Skip model-dependent tests if no models available
+    if (td.needs === 'models' && !hasModels) {
+      skipped++;
+      $('runall-skipped').textContent = skipped;
+      _appendRow('skip', td.name, td.round, 0, 'No models available');
+      continue;
+    }
+
+    const t0 = performance.now();
+    try {
+      const result = await td.fn();
+      const ms = Math.round(performance.now() - t0);
+      if (result.ok) {
+        passed++;
+        $('runall-passed').textContent = passed;
+        _appendRow('pass', td.name, td.round, ms, result.detail || '');
+      } else {
+        failed++;
+        $('runall-failed').textContent = failed;
+        _appendRow('fail', td.name, td.round, ms, result.detail || 'unexpected response');
+      }
+    } catch (e) {
+      const ms = Math.round(performance.now() - t0);
+      failed++;
+      $('runall-failed').textContent = failed;
+      _appendRow('fail', td.name, td.round, ms, e.message);
+    }
+  }
+
+  $('runall-progress-text').textContent = _runAllStop ? t('d_stopped') : t('d_done');
+  $('runall-btn').disabled = false;
+  $('runall-stop').style.display = 'none';
+  if (!_runAllStop) $('runall-bar').style.background = failed ? 'var(--red)' : 'var(--green)';
+}
+
+function _appendRow(status, name, round, ms, detail) {
+  const cls = status;
+  const label = status === 'pass' ? 'PASS' : status === 'fail' ? 'FAIL' : 'SKIP';
+  const row = document.createElement('div');
+  row.className = 'trow ' + cls;
+  row.innerHTML = `<span class="tname">${esc(name)} <span style="color:var(--muted);font-size:11px">#${round}</span></span><span class="tbadge">${label}</span><span class="ttime">${ms}ms</span><span class="tdetail" title="${esc(String(detail))}">${esc(String(detail))}</span>`;
+  $('runall-log').appendChild(row);
+  row.scrollIntoView({block:'nearest'});
+}
+
+HELP['run-all'] = {
+  title: 'Run All Tests',
+  body: `<p>Executes <strong>every endpoint test</strong> multiple times in <strong>random order</strong> to stress-test the entire Swarm API surface.</p>
+<div class="hlabel">What it does</div>
+<ul>
+  <li>Builds a list of 16 test cases (6 GET + 10 POST endpoints)</li>
+  <li>Repeats each test N times (default: 3) → 48 total invocations</li>
+  <li>Shuffles the entire list (Fisher-Yates) so order is unpredictable</li>
+  <li>For tests that need models, randomly picks from available .gguf files</li>
+  <li>For tests that need prompts, fetches a random one from the library</li>
+  <li>Categories (reasoning, coding, creative, etc.) are randomly chosen</li>
+</ul>
+<div class="hlabel">How results are scored</div>
+<ul>
+  <li><strong>PASS</strong> — Endpoint returned expected HTTP status + valid data</li>
+  <li><strong>FAIL</strong> — Unexpected status, exception, or malformed response</li>
+  <li><strong>SKIP</strong> — Test requires models but none are available</li>
+</ul>
+<p>Use <strong>Max tokens = 32</strong> for fast runs, or increase for deeper output quality checks. Press <strong>Stop</strong> to abort mid-run.</p>`
+};
+
+/* ─── i18n ─────────────────────────────────────────────────── */
+let _lang = localStorage.getItem('swarm-lang') || 'en';
+const I18N = {
+en:{hdr_title:'\u{1F9EA} Swarm Test Dashboard',hdr_checking:'Checking...',tab_status:'Status',tab_models:'Models',tab_arena:'Arena',tab_bench:'Benchmark',tab_marathon:'Marathon',tab_eval:'Evaluation',tab_pool:'Pool & Memory',tab_runall:'\u25B6 Run All',st_bridge:'Bridge Status',st_mem:'Memory Snapshot',st_pool:'Pool Status',btn_refresh:'Refresh',md_avail:'Available Models',md_scan:'Scan Models',md_prompts:'Prompt Library',md_load:'Load Prompts',md_random:'Random Prompt',ar_title:'Arena \u2014 Parallel Inference + Judge',ar_select:'Select Models (check 2+):',lbl_prompt:'Prompt',ar_sys:'System Prompt (optional)',lbl_tokens:'Max Tokens',lbl_temp:'Temperature',ar_random:'Random',ar_run:'Run Arena',ar_results:'Arena Results',ar_judge:'Judge Scores',bm_title:'Benchmark \u2014 Concurrency Scaling',lbl_model:'Model',bm_levels:'Concurrency Levels (comma-sep)',bm_run:'Run Benchmark',bm_results:'Benchmark Results',mr_title:'Marathon \u2014 Multi-Round Testing',lbl_cat:'Category',lbl_rounds:'Rounds',mr_custom:'Custom Prompt (used when category=custom)',mr_start:'Start Marathon',btn_stop:'Stop',mr_leader:'Leaderboard',mr_log:'Round Log',cat_reason:'Reasoning',cat_coding:'Coding',cat_creative:'Creative',cat_knowledge:'Knowledge',cat_math:'Math',cat_custom:'Custom',ev_title:'Evaluation Engine',ev_random:'Random Prompt',ev_infer:'1. Run Inference',ev_eval:'2. Evaluate Response',ev_output:'Inference Output',ev_result:'Evaluation Result',pl_title:'Model Pool Management',pl_select:'Select Models to Preload:',pl_preload:'Preload Selected',pl_drain:'Drain All',pl_pool:'Pool Status',pl_mem:'Memory Monitor',pl_diag:'Bottleneck Diagnosis',pl_diag_run:'Run Diagnosis',pl_rec:'Performance Recommendations',pl_rec_run:'Get Recommendations',ra_title:'\u25B6 Run All Tests',ra_desc:'Runs every endpoint test 3 times each in random order with random model/prompt selection.',ra_repeats:'Repeats per test',ra_tokens:'Max tokens',ra_run:'\u25B6 Run All Tests',ra_ready:'Ready',ra_log:'Results Log',ra_total:'Total:',d_loading:'Loading...',d_bridge_ok:'Bridge connected',d_bridge_err:'Bridge unavailable',d_no_server:'Cannot reach server',d_done:'Done!',d_stopped:'Stopped',d_select2:'Select at least 2 models',d_select1:'Select a model',d_select1p:'Select at least 1 model'},
+fr:{hdr_title:'\u{1F9EA} Tableau de bord Swarm',hdr_checking:'V\u00e9rification...',tab_status:'\u00c9tat',tab_models:'Mod\u00e8les',tab_arena:'Ar\u00e8ne',tab_bench:'Benchmark',tab_marathon:'Marathon',tab_eval:'\u00c9valuation',tab_pool:'Pool & M\u00e9moire',tab_runall:'\u25B6 Tout lancer',st_bridge:'\u00c9tat du pont',st_mem:'Instantan\u00e9 m\u00e9moire',st_pool:'\u00c9tat du pool',btn_refresh:'Actualiser',md_avail:'Mod\u00e8les disponibles',md_scan:'Scanner les mod\u00e8les',md_prompts:'Biblioth\u00e8que de prompts',md_load:'Charger les prompts',md_random:'Prompt al\u00e9atoire',ar_title:'Ar\u00e8ne \u2014 Inf\u00e9rence parall\u00e8le + Juge',ar_select:'S\u00e9lectionnez des mod\u00e8les (2+)\u00a0:',lbl_prompt:'Prompt',ar_sys:'Prompt syst\u00e8me (optionnel)',lbl_tokens:'Tokens max',lbl_temp:'Temp\u00e9rature',ar_random:'Al\u00e9atoire',ar_run:"Lancer l'ar\u00e8ne",ar_results:"R\u00e9sultats de l'ar\u00e8ne",ar_judge:'Scores du juge',bm_title:"Benchmark \u2014 Mise \u00e0 l'\u00e9chelle",lbl_model:'Mod\u00e8le',bm_levels:'Niveaux de concurrence (virgules)',bm_run:'Lancer le benchmark',bm_results:'R\u00e9sultats du benchmark',mr_title:'Marathon \u2014 Tests multi-tours',lbl_cat:'Cat\u00e9gorie',lbl_rounds:'Tours',mr_custom:'Prompt perso (quand cat\u00e9gorie=custom)',mr_start:'D\u00e9marrer le marathon',btn_stop:'Arr\u00eater',mr_leader:'Classement',mr_log:'Journal des tours',cat_reason:'Raisonnement',cat_coding:'Code',cat_creative:'Cr\u00e9atif',cat_knowledge:'Connaissances',cat_math:'Math\u00e9matiques',cat_custom:'Personnalis\u00e9',ev_title:"Moteur d'\u00e9valuation",ev_random:'Prompt al\u00e9atoire',ev_infer:"1. Lancer l'inf\u00e9rence",ev_eval:'2. \u00c9valuer la r\u00e9ponse',ev_output:"Sortie d'inf\u00e9rence",ev_result:"R\u00e9sultat d'\u00e9valuation",pl_title:'Gestion du pool de mod\u00e8les',pl_select:'Mod\u00e8les \u00e0 pr\u00e9charger\u00a0:',pl_preload:'Pr\u00e9charger la s\u00e9lection',pl_drain:'Tout vider',pl_pool:'\u00c9tat du pool',pl_mem:'Moniteur m\u00e9moire',pl_diag:'Diagnostic de goulots',pl_diag_run:'Lancer le diagnostic',pl_rec:'Recommandations de performance',pl_rec_run:'Obtenir les recommandations',ra_title:'\u25B6 Lancer tous les tests',ra_desc:"Lance chaque test d'endpoint 3 fois dans un ordre al\u00e9atoire avec s\u00e9lection al\u00e9atoire de mod\u00e8les/prompts.",ra_repeats:'R\u00e9p\u00e9titions par test',ra_tokens:'Tokens max',ra_run:'\u25B6 Lancer tous les tests',ra_ready:'Pr\u00eat',ra_log:'Journal des r\u00e9sultats',ra_total:'Total\u00a0:',d_loading:'Chargement...',d_bridge_ok:'Pont connect\u00e9',d_bridge_err:'Pont indisponible',d_no_server:'Serveur inaccessible',d_done:'Termin\u00e9\u00a0!',d_stopped:'Arr\u00eat\u00e9',d_select2:'S\u00e9lectionnez au moins 2 mod\u00e8les',d_select1:'S\u00e9lectionnez un mod\u00e8le',d_select1p:'S\u00e9lectionnez au moins 1 mod\u00e8le'},
+de:{hdr_title:'\u{1F9EA} Swarm Test-Dashboard',hdr_checking:'Pr\u00fcfe...',tab_status:'Status',tab_models:'Modelle',tab_arena:'Arena',tab_bench:'Benchmark',tab_marathon:'Marathon',tab_eval:'Bewertung',tab_pool:'Pool & Speicher',tab_runall:'\u25B6 Alle starten',st_bridge:'Bridge-Status',st_mem:'Speicher-Snapshot',st_pool:'Pool-Status',btn_refresh:'Aktualisieren',md_avail:'Verf\u00fcgbare Modelle',md_scan:'Modelle scannen',md_prompts:'Prompt-Bibliothek',md_load:'Prompts laden',md_random:'Zuf\u00e4lliger Prompt',ar_title:'Arena \u2014 Parallele Inferenz + Richter',ar_select:'Modelle w\u00e4hlen (mind. 2):',lbl_prompt:'Prompt',ar_sys:'System-Prompt (optional)',lbl_tokens:'Max Tokens',lbl_temp:'Temperatur',ar_random:'Zuf\u00e4llig',ar_run:'Arena starten',ar_results:'Arena-Ergebnisse',ar_judge:'Richter-Bewertungen',bm_title:'Benchmark \u2014 Skalierungstest',lbl_model:'Modell',bm_levels:'Parallelit\u00e4tsstufen (Komma-getr.)',bm_run:'Benchmark starten',bm_results:'Benchmark-Ergebnisse',mr_title:'Marathon \u2014 Mehrrunden-Test',lbl_cat:'Kategorie',lbl_rounds:'Runden',mr_custom:'Eigener Prompt (bei Kategorie=Custom)',mr_start:'Marathon starten',btn_stop:'Stopp',mr_leader:'Rangliste',mr_log:'Rundenprotokoll',cat_reason:'Logik',cat_coding:'Programmierung',cat_creative:'Kreativ',cat_knowledge:'Wissen',cat_math:'Mathematik',cat_custom:'Benutzerdefiniert',ev_title:'Bewertungsmodul',ev_random:'Zuf\u00e4lliger Prompt',ev_infer:'1. Inferenz starten',ev_eval:'2. Antwort bewerten',ev_output:'Inferenz-Ausgabe',ev_result:'Bewertungsergebnis',pl_title:'Modell-Pool-Verwaltung',pl_select:'Modelle zum Vorladen:',pl_preload:'Ausgew\u00e4hlte laden',pl_drain:'Alle entladen',pl_pool:'Pool-Status',pl_mem:'Speichermonitor',pl_diag:'Engpass-Diagnose',pl_diag_run:'Diagnose starten',pl_rec:'Leistungsempfehlungen',pl_rec_run:'Empfehlungen abrufen',ra_title:'\u25B6 Alle Tests starten',ra_desc:'F\u00fchrt jeden Endpoint-Test 3\u00d7 in zuf\u00e4lliger Reihenfolge mit zuf\u00e4lliger Modell-/Prompt-Auswahl aus.',ra_repeats:'Wiederholungen pro Test',ra_tokens:'Max Tokens',ra_run:'\u25B6 Alle Tests starten',ra_ready:'Bereit',ra_log:'Ergebnisprotokoll',ra_total:'Gesamt:',d_loading:'Laden...',d_bridge_ok:'Bridge verbunden',d_bridge_err:'Bridge nicht verf\u00fcgbar',d_no_server:'Server nicht erreichbar',d_done:'Fertig!',d_stopped:'Gestoppt',d_select2:'W\u00e4hlen Sie mindestens 2 Modelle',d_select1:'W\u00e4hlen Sie ein Modell',d_select1p:'W\u00e4hlen Sie mindestens 1 Modell'},
+ro:{hdr_title:'\u{1F9EA} Panou de testare Swarm',hdr_checking:'Se verific\u0103...',tab_status:'Stare',tab_models:'Modele',tab_arena:'Aren\u0103',tab_bench:'Benchmark',tab_marathon:'Maraton',tab_eval:'Evaluare',tab_pool:'Pool & Memorie',tab_runall:'\u25B6 Ruleaz\u0103 tot',st_bridge:'Stare punte',st_mem:'Instantaneu memorie',st_pool:'Stare pool',btn_refresh:'Re\u00eemprosp\u0103tare',md_avail:'Modele disponibile',md_scan:'Scanare modele',md_prompts:'Bibliotec\u0103 de prompts',md_load:'\u00cEncarc\u0103 prompts',md_random:'Prompt aleatoriu',ar_title:'Aren\u0103 \u2014 Inferen\u021b\u0103 paralel\u0103 + Judec\u0103tor',ar_select:'Selecta\u021bi modele (min. 2):',lbl_prompt:'Prompt',ar_sys:'Prompt de sistem (op\u021bional)',lbl_tokens:'Tokeni max',lbl_temp:'Temperatur\u0103',ar_random:'Aleatoriu',ar_run:'Lanseaz\u0103 arena',ar_results:'Rezultate aren\u0103',ar_judge:'Scoruri judec\u0103tor',bm_title:'Benchmark \u2014 Scalare concuren\u021b\u0103',lbl_model:'Model',bm_levels:'Niveluri de concuren\u021b\u0103 (virgul\u0103)',bm_run:'Lanseaz\u0103 benchmark',bm_results:'Rezultate benchmark',mr_title:'Maraton \u2014 Testare multi-rund\u0103',lbl_cat:'Categorie',lbl_rounds:'Runde',mr_custom:'Prompt personalizat (c\u00e2nd categorie=custom)',mr_start:'Pornire maraton',btn_stop:'Oprire',mr_leader:'Clasament',mr_log:'Jurnal runde',cat_reason:'Ra\u021bionament',cat_coding:'Programare',cat_creative:'Creativ',cat_knowledge:'Cuno\u0219tin\u021be',cat_math:'Matematic\u0103',cat_custom:'Personalizat',ev_title:'Motor de evaluare',ev_random:'Prompt aleatoriu',ev_infer:'1. Ruleaz\u0103 inferen\u021ba',ev_eval:'2. Evalueaz\u0103 r\u0103spunsul',ev_output:'Ie\u0219ire inferen\u021b\u0103',ev_result:'Rezultat evaluare',pl_title:'Administrare pool modele',pl_select:'Modele de pre\u00eenc\u0103rcat:',pl_preload:'Pre\u00eencarc\u0103 selectate',pl_drain:'Gole\u0219te tot',pl_pool:'Stare pool',pl_mem:'Monitor memorie',pl_diag:'Diagnostic blocaje',pl_diag_run:'Lanseaz\u0103 diagnosticul',pl_rec:'Recomand\u0103ri de performan\u021b\u0103',pl_rec_run:'Ob\u021bine recomand\u0103ri',ra_title:'\u25B6 Ruleaz\u0103 toate testele',ra_desc:'Ruleaz\u0103 fiecare test de endpoint de 3 ori \u00een ordine aleatorie cu selec\u021bie aleatorie de modele/prompts.',ra_repeats:'Repet\u0103ri per test',ra_tokens:'Tokeni max',ra_run:'\u25B6 Ruleaz\u0103 toate testele',ra_ready:'Preg\u0103tit',ra_log:'Jurnal rezultate',ra_total:'Total:',d_loading:'Se \u00eencarc\u0103...',d_bridge_ok:'Punte conectat\u0103',d_bridge_err:'Punte indisponibil\u0103',d_no_server:'Server inaccesibil',d_done:'Gata!',d_stopped:'Oprit',d_select2:'Selecta\u021bi cel pu\u021bin 2 modele',d_select1:'Selecta\u021bi un model',d_select1p:'Selecta\u021bi cel pu\u021bin 1 model'},
+hu:{hdr_title:'\u{1F9EA} Swarm teszt ir\u00e1ny\u00edt\u00f3pult',hdr_checking:'Ellen\u0151rz\u00e9s...',tab_status:'\u00c1llapot',tab_models:'Modellek',tab_arena:'Ar\u00e9na',tab_bench:'Benchmark',tab_marathon:'Maraton',tab_eval:'\u00c9rt\u00e9kel\u00e9s',tab_pool:'Pool & Mem\u00f3ria',tab_runall:'\u25B6 \u00d6sszes futtat\u00e1sa',st_bridge:'H\u00edd \u00e1llapota',st_mem:'Mem\u00f3ria pillanatk\u00e9p',st_pool:'Pool \u00e1llapota',btn_refresh:'Friss\u00edt\u00e9s',md_avail:'El\u00e9rhet\u0151 modellek',md_scan:'Modellek keres\u00e9se',md_prompts:'Prompt k\u00f6nyvt\u00e1r',md_load:'Promptok bet\u00f6lt\u00e9se',md_random:'V\u00e9letlenszer\u0171 prompt',ar_title:'Ar\u00e9na \u2014 P\u00e1rhuzamos inferencia + B\u00edr\u00f3',ar_select:'Modellek kiv\u00e1laszt\u00e1sa (min. 2):',lbl_prompt:'Prompt',ar_sys:'Rendszer prompt (opcion\u00e1lis)',lbl_tokens:'Max tokenek',lbl_temp:'H\u0151m\u00e9rs\u00e9klet',ar_random:'V\u00e9letlenszer\u0171',ar_run:'Ar\u00e9na ind\u00edt\u00e1sa',ar_results:'Ar\u00e9na eredm\u00e9nyek',ar_judge:'B\u00edr\u00f3i pontsz\u00e1mok',bm_title:'Benchmark \u2014 Sk\u00e1l\u00e1z\u00e1si teszt',lbl_model:'Modell',bm_levels:'P\u00e1rhuzamoss\u00e1gi szintek (vessz\u0151vel)',bm_run:'Benchmark ind\u00edt\u00e1sa',bm_results:'Benchmark eredm\u00e9nyek',mr_title:'Maraton \u2014 T\u00f6bbk\u00f6r\u00f6s tesztel\u00e9s',lbl_cat:'Kateg\u00f3ria',lbl_rounds:'K\u00f6r\u00f6k',mr_custom:'Egy\u00e9ni prompt (kateg\u00f3ria=custom eset\u00e9n)',mr_start:'Maraton ind\u00edt\u00e1sa',btn_stop:'Le\u00e1ll\u00edt\u00e1s',mr_leader:'Ranglista',mr_log:'K\u00f6rnapl\u00f3k',cat_reason:'Gondolkod\u00e1s',cat_coding:'K\u00f3dol\u00e1s',cat_creative:'Kreat\u00edv',cat_knowledge:'Tud\u00e1s',cat_math:'Matematika',cat_custom:'Egy\u00e9ni',ev_title:'\u00c9rt\u00e9kel\u0151 motor',ev_random:'V\u00e9letlenszer\u0171 prompt',ev_infer:'1. Inferencia futtat\u00e1sa',ev_eval:'2. V\u00e1lasz \u00e9rt\u00e9kel\u00e9se',ev_output:'Inferencia kimenet',ev_result:'\u00c9rt\u00e9kel\u00e9s eredm\u00e9nye',pl_title:'Modell pool kezel\u00e9s',pl_select:'El\u0151t\u00f6ltend\u0151 modellek:',pl_preload:'Kiv\u00e1lasztottak bet\u00f6lt\u00e9se',pl_drain:'\u00d6sszes \u00fcr\u00edt\u00e9se',pl_pool:'Pool \u00e1llapota',pl_mem:'Mem\u00f3ria monitor',pl_diag:'Sz\u0171k keresztmetszet diagn\u00f3zis',pl_diag_run:'Diagn\u00f3zis ind\u00edt\u00e1sa',pl_rec:'Teljes\u00edtm\u00e9ny javaslatok',pl_rec_run:'Javaslatok lek\u00e9r\u00e9se',ra_title:'\u25B6 \u00d6sszes teszt futtat\u00e1sa',ra_desc:'Minden v\u00e9gpont tesztet 3-szor futtat v\u00e9letlenszer\u0171 sorrendben, v\u00e9letlenszer\u0171 modell/prompt v\u00e1laszt\u00e1ssal.',ra_repeats:'Ism\u00e9tl\u00e9sek tesztenk\u00e9nt',ra_tokens:'Max tokenek',ra_run:'\u25B6 \u00d6sszes teszt futtat\u00e1sa',ra_ready:'K\u00e9sz',ra_log:'Eredm\u00e9nynapl\u00f3',ra_total:'\u00d6sszesen:',d_loading:'Bet\u00f6lt\u00e9s...',d_bridge_ok:'H\u00edd csatlakoztatva',d_bridge_err:'H\u00edd nem el\u00e9rhet\u0151',d_no_server:'Szerver nem el\u00e9rhet\u0151',d_done:'K\u00e9sz!',d_stopped:'Le\u00e1ll\u00edtva',d_select2:'V\u00e1lasszon legal\u00e1bb 2 modellt',d_select1:'V\u00e1lasszon egy modellt',d_select1p:'V\u00e1lasszon legal\u00e1bb 1 modellt'},
+he:{hdr_title:'\u{1F9EA} \u05DC\u05D5\u05D7 \u05D1\u05E7\u05E8\u05D4 Swarm',hdr_checking:'\u05D1\u05D5\u05D3\u05E7...',tab_status:'\u05DE\u05E6\u05D1',tab_models:'\u05DE\u05D5\u05D3\u05DC\u05D9\u05DD',tab_arena:'\u05D0\u05E8\u05E0\u05D4',tab_bench:'\u05DE\u05D3\u05D3 \u05D1\u05D9\u05E6\u05D5\u05E2\u05D9\u05DD',tab_marathon:'\u05DE\u05E8\u05EA\u05D5\u05DF',tab_eval:'\u05D4\u05E2\u05E8\u05DB\u05D4',tab_pool:'\u05DE\u05D0\u05D2\u05E8 & \u05D6\u05D9\u05DB\u05E8\u05D5\u05DF',tab_runall:'\u25B6 \u05D4\u05E8\u05E5 \u05D4\u05DB\u05D5\u05DC',st_bridge:'\u05DE\u05E6\u05D1 \u05D2\u05E9\u05E8',st_mem:'\u05EA\u05DE\u05D5\u05E0\u05EA \u05D6\u05D9\u05DB\u05E8\u05D5\u05DF',st_pool:'\u05DE\u05E6\u05D1 \u05DE\u05D0\u05D2\u05E8',btn_refresh:'\u05E8\u05E2\u05E0\u05D5\u05DF',md_avail:'\u05DE\u05D5\u05D3\u05DC\u05D9\u05DD \u05D6\u05DE\u05D9\u05E0\u05D9\u05DD',md_scan:'\u05E1\u05E8\u05D5\u05E7 \u05DE\u05D5\u05D3\u05DC\u05D9\u05DD',md_prompts:'\u05E1\u05E4\u05E8\u05D9\u05D9\u05EA \u05E4\u05E8\u05D5\u05DE\u05E4\u05D8\u05D9\u05DD',md_load:'\u05D8\u05E2\u05DF \u05E4\u05E8\u05D5\u05DE\u05E4\u05D8\u05D9\u05DD',md_random:'\u05E4\u05E8\u05D5\u05DE\u05E4\u05D8 \u05D0\u05E7\u05E8\u05D0\u05D9',ar_title:'\u05D0\u05E8\u05E0\u05D4 \u2014 \u05D4\u05E1\u05E7\u05D4 \u05DE\u05E7\u05D1\u05D9\u05DC\u05D9\u05EA + \u05E9\u05D5\u05E4\u05D8',ar_select:'\u05D1\u05D7\u05E8 \u05DE\u05D5\u05D3\u05DC\u05D9\u05DD (\u05DE\u05D9\u05E0\u05D9\u05DE\u05D5\u05DD 2):',lbl_prompt:'\u05E4\u05E8\u05D5\u05DE\u05E4\u05D8',ar_sys:'\u05E4\u05E8\u05D5\u05DE\u05E4\u05D8 \u05DE\u05E2\u05E8\u05DB\u05EA (\u05D0\u05D5\u05E4\u05E6\u05D9\u05D5\u05E0\u05DC\u05D9)',lbl_tokens:'\u05D8\u05D5\u05E7\u05E0\u05D9\u05DD \u05DE\u05E7\u05E1',lbl_temp:'\u05D8\u05DE\u05E4\u05E8\u05D8\u05D5\u05E8\u05D4',ar_random:'\u05D0\u05E7\u05E8\u05D0\u05D9',ar_run:'\u05D4\u05E4\u05E2\u05DC \u05D0\u05E8\u05E0\u05D4',ar_results:'\u05EA\u05D5\u05E6\u05D0\u05D5\u05EA \u05D0\u05E8\u05E0\u05D4',ar_judge:'\u05E6\u05D9\u05D5\u05E0\u05D9 \u05E9\u05D5\u05E4\u05D8',bm_title:'\u05DE\u05D3\u05D3 \u05D1\u05D9\u05E6\u05D5\u05E2\u05D9\u05DD \u2014 \u05DE\u05D1\u05D7\u05DF \u05E1\u05E7\u05DC\u05D1\u05D9\u05DC\u05D9\u05D5\u05EA',lbl_model:'\u05DE\u05D5\u05D3\u05DC',bm_levels:'\u05E8\u05DE\u05D5\u05EA \u05DE\u05E7\u05D1\u05D9\u05DC\u05D9\u05D5\u05EA (\u05DE\u05D5\u05E4\u05E8\u05D3\u05D5\u05EA \u05D1\u05E4\u05E1\u05D9\u05E7)',bm_run:'\u05D4\u05E4\u05E2\u05DC \u05DE\u05D3\u05D3',bm_results:'\u05EA\u05D5\u05E6\u05D0\u05D5\u05EA \u05DE\u05D3\u05D3',mr_title:'\u05DE\u05E8\u05EA\u05D5\u05DF \u2014 \u05D1\u05D3\u05D9\u05E7\u05D4 \u05E8\u05D1-\u05E1\u05D9\u05D1\u05D5\u05D1\u05D9\u05EA',lbl_cat:'\u05E7\u05D8\u05D2\u05D5\u05E8\u05D9\u05D4',lbl_rounds:'\u05E1\u05D9\u05D1\u05D5\u05D1\u05D9\u05DD',mr_custom:'\u05E4\u05E8\u05D5\u05DE\u05E4\u05D8 \u05DE\u05D5\u05EA\u05D0\u05DD (\u05DB\u05E9\u05E7\u05D8\u05D2\u05D5\u05E8\u05D9\u05D4=\u05DE\u05D5\u05EA\u05D0\u05DD)',mr_start:'\u05D4\u05EA\u05D7\u05DC \u05DE\u05E8\u05EA\u05D5\u05DF',btn_stop:'\u05E2\u05E6\u05D5\u05E8',mr_leader:'\u05D8\u05D1\u05DC\u05EA \u05D3\u05D9\u05E8\u05D5\u05D2',mr_log:'\u05D9\u05D5\u05DE\u05DF \u05E1\u05D9\u05D1\u05D5\u05D1\u05D9\u05DD',cat_reason:'\u05D7\u05E9\u05D9\u05D1\u05D4',cat_coding:'\u05E7\u05D9\u05D3\u05D5\u05D3',cat_creative:'\u05D9\u05E6\u05D9\u05E8\u05EA\u05D9',cat_knowledge:'\u05D9\u05D3\u05E2',cat_math:'\u05DE\u05EA\u05DE\u05D8\u05D9\u05E7\u05D4',cat_custom:'\u05DE\u05D5\u05EA\u05D0\u05DD',ev_title:'\u05DE\u05E0\u05D5\u05E2 \u05D4\u05E2\u05E8\u05DB\u05D4',ev_random:'\u05E4\u05E8\u05D5\u05DE\u05E4\u05D8 \u05D0\u05E7\u05E8\u05D0\u05D9',ev_infer:'1. \u05D4\u05E4\u05E2\u05DC \u05D4\u05E1\u05E7\u05D4',ev_eval:'2. \u05D4\u05E2\u05E8\u05DA \u05EA\u05E9\u05D5\u05D1\u05D4',ev_output:'\u05E4\u05DC\u05D8 \u05D4\u05E1\u05E7\u05D4',ev_result:'\u05EA\u05D5\u05E6\u05D0\u05EA \u05D4\u05E2\u05E8\u05DB\u05D4',pl_title:'\u05E0\u05D9\u05D4\u05D5\u05DC \u05DE\u05D0\u05D2\u05E8 \u05DE\u05D5\u05D3\u05DC\u05D9\u05DD',pl_select:'\u05DE\u05D5\u05D3\u05DC\u05D9\u05DD \u05DC\u05D8\u05E2\u05D9\u05E0\u05D4 \u05DE\u05E8\u05D0\u05E9:',pl_preload:'\u05D8\u05E2\u05DF \u05E0\u05D1\u05D7\u05E8\u05D9\u05DD',pl_drain:'\u05E8\u05D5\u05E7\u05DF \u05D4\u05DB\u05D5\u05DC',pl_pool:'\u05DE\u05E6\u05D1 \u05DE\u05D0\u05D2\u05E8',pl_mem:'\u05DE\u05E2\u05E7\u05D1 \u05D6\u05D9\u05DB\u05E8\u05D5\u05DF',pl_diag:'\u05D0\u05D1\u05D7\u05D5\u05DF \u05E6\u05D5\u05D5\u05D0\u05E8\u05D9 \u05D1\u05E7\u05D1\u05D5\u05E7',pl_diag_run:'\u05D4\u05E4\u05E2\u05DC \u05D0\u05D1\u05D7\u05D5\u05DF',pl_rec:'\u05D4\u05DE\u05DC\u05E6\u05D5\u05EA \u05D1\u05D9\u05E6\u05D5\u05E2\u05D9\u05DD',pl_rec_run:'\u05E7\u05D1\u05DC \u05D4\u05DE\u05DC\u05E6\u05D5\u05EA',ra_title:'\u25B6 \u05D4\u05E8\u05E5 \u05D0\u05EA \u05DB\u05DC \u05D4\u05D1\u05D3\u05D9\u05E7\u05D5\u05EA',ra_desc:'\u05DE\u05E8\u05D9\u05E5 \u05DB\u05DC \u05D1\u05D3\u05D9\u05E7\u05EA endpoint \u05E9\u05DC\u05D5\u05E9 \u05E4\u05E2\u05DE\u05D9\u05DD \u05D1\u05E1\u05D3\u05E8 \u05D0\u05E7\u05E8\u05D0\u05D9 \u05E2\u05DD \u05D1\u05D7\u05D9\u05E8\u05EA \u05DE\u05D5\u05D3\u05DC/\u05E4\u05E8\u05D5\u05DE\u05E4\u05D8 \u05D0\u05E7\u05E8\u05D0\u05D9\u05EA.',ra_repeats:'\u05D7\u05D6\u05E8\u05D5\u05EA \u05DC\u05D1\u05D3\u05D9\u05E7\u05D4',ra_tokens:'\u05D8\u05D5\u05E7\u05E0\u05D9\u05DD \u05DE\u05E7\u05E1',ra_run:'\u25B6 \u05D4\u05E8\u05E5 \u05D0\u05EA \u05DB\u05DC \u05D4\u05D1\u05D3\u05D9\u05E7\u05D5\u05EA',ra_ready:'\u05DE\u05D5\u05DB\u05DF',ra_log:'\u05D9\u05D5\u05DE\u05DF \u05EA\u05D5\u05E6\u05D0\u05D5\u05EA',ra_total:'\u05E1\u05D4"\u05DB:',d_loading:'\u05D8\u05D5\u05E2\u05DF...',d_bridge_ok:'\u05D2\u05E9\u05E8 \u05DE\u05D7\u05D5\u05D1\u05E8',d_bridge_err:'\u05D2\u05E9\u05E8 \u05DC\u05D0 \u05D6\u05DE\u05D9\u05DF',d_no_server:'\u05DC\u05D0 \u05E0\u05D9\u05EA\u05DF \u05DC\u05D4\u05D2\u05D9\u05E2 \u05DC\u05E9\u05E8\u05EA',d_done:'\u05E1\u05D9\u05D5\u05DD!',d_stopped:'\u05E0\u05E2\u05E6\u05E8',d_select2:'\u05D1\u05D7\u05E8 \u05DC\u05E4\u05D7\u05D5\u05EA 2 \u05DE\u05D5\u05D3\u05DC\u05D9\u05DD',d_select1:'\u05D1\u05D7\u05E8 \u05DE\u05D5\u05D3\u05DC',d_select1p:'\u05D1\u05D7\u05E8 \u05DC\u05E4\u05D7\u05D5\u05EA \u05DE\u05D5\u05D3\u05DC \u05D0\u05D7\u05D3'},
+ja:{hdr_title:'\u{1F9EA} Swarm \u30C6\u30B9\u30C8\u30C0\u30C3\u30B7\u30E5\u30DC\u30FC\u30C9',hdr_checking:'\u78BA\u8A8D\u4E2D...',tab_status:'\u30B9\u30C6\u30FC\u30BF\u30B9',tab_models:'\u30E2\u30C7\u30EB',tab_arena:'\u30A2\u30EA\u30FC\u30CA',tab_bench:'\u30D9\u30F3\u30C1\u30DE\u30FC\u30AF',tab_marathon:'\u30DE\u30E9\u30BD\u30F3',tab_eval:'\u8A55\u4FA1',tab_pool:'\u30D7\u30FC\u30EB & \u30E1\u30E2\u30EA',tab_runall:'\u25B6 \u5168\u30C6\u30B9\u30C8\u5B9F\u884C',st_bridge:'\u30D6\u30EA\u30C3\u30B8\u72B6\u614B',st_mem:'\u30E1\u30E2\u30EA\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8',st_pool:'\u30D7\u30FC\u30EB\u72B6\u614B',btn_refresh:'\u66F4\u65B0',md_avail:'\u5229\u7528\u53EF\u80FD\u306A\u30E2\u30C7\u30EB',md_scan:'\u30E2\u30C7\u30EB\u3092\u30B9\u30AD\u30E3\u30F3',md_prompts:'\u30D7\u30ED\u30F3\u30D7\u30C8\u30E9\u30A4\u30D6\u30E9\u30EA',md_load:'\u30D7\u30ED\u30F3\u30D7\u30C8\u3092\u8AAD\u8FBC',md_random:'\u30E9\u30F3\u30C0\u30E0\u30D7\u30ED\u30F3\u30D7\u30C8',ar_title:'\u30A2\u30EA\u30FC\u30CA \u2014 \u4E26\u5217\u63A8\u8AD6 + \u5BE9\u5224',ar_select:'\u30E2\u30C7\u30EB\u3092\u9078\u629E\uFF082\u3064\u4EE5\u4E0A\uFF09:',lbl_prompt:'\u30D7\u30ED\u30F3\u30D7\u30C8',ar_sys:'\u30B7\u30B9\u30C6\u30E0\u30D7\u30ED\u30F3\u30D7\u30C8\uFF08\u4EFB\u610F\uFF09',lbl_tokens:'\u6700\u5927\u30C8\u30FC\u30AF\u30F3',lbl_temp:'\u6E29\u5EA6',ar_random:'\u30E9\u30F3\u30C0\u30E0',ar_run:'\u30A2\u30EA\u30FC\u30CA\u958B\u59CB',ar_results:'\u30A2\u30EA\u30FC\u30CA\u7D50\u679C',ar_judge:'\u5BE9\u5224\u30B9\u30B3\u30A2',bm_title:'\u30D9\u30F3\u30C1\u30DE\u30FC\u30AF \u2014 \u4E26\u884C\u6027\u30B9\u30B1\u30FC\u30EA\u30F3\u30B0',lbl_model:'\u30E2\u30C7\u30EB',bm_levels:'\u4E26\u884C\u6027\u30EC\u30D9\u30EB\uFF08\u30AB\u30F3\u30DE\u533A\u5207\u308A\uFF09',bm_run:'\u30D9\u30F3\u30C1\u30DE\u30FC\u30AF\u958B\u59CB',bm_results:'\u30D9\u30F3\u30C1\u30DE\u30FC\u30AF\u7D50\u679C',mr_title:'\u30DE\u30E9\u30BD\u30F3 \u2014 \u8907\u6570\u30E9\u30A6\u30F3\u30C9\u30C6\u30B9\u30C8',lbl_cat:'\u30AB\u30C6\u30B4\u30EA',lbl_rounds:'\u30E9\u30A6\u30F3\u30C9\u6570',mr_custom:'\u30AB\u30B9\u30BF\u30E0\u30D7\u30ED\u30F3\u30D7\u30C8\uFF08\u30AB\u30C6\u30B4\u30EA=custom\u306E\u5834\u5408\uFF09',mr_start:'\u30DE\u30E9\u30BD\u30F3\u958B\u59CB',btn_stop:'\u505C\u6B62',mr_leader:'\u30EA\u30FC\u30C0\u30FC\u30DC\u30FC\u30C9',mr_log:'\u30E9\u30A6\u30F3\u30C9\u30ED\u30B0',cat_reason:'\u63A8\u8AD6',cat_coding:'\u30B3\u30FC\u30C7\u30A3\u30F3\u30B0',cat_creative:'\u5275\u4F5C',cat_knowledge:'\u77E5\u8B58',cat_math:'\u6570\u5B66',cat_custom:'\u30AB\u30B9\u30BF\u30E0',ev_title:'\u8A55\u4FA1\u30A8\u30F3\u30B8\u30F3',ev_random:'\u30E9\u30F3\u30C0\u30E0\u30D7\u30ED\u30F3\u30D7\u30C8',ev_infer:'1. \u63A8\u8AD6\u3092\u5B9F\u884C',ev_eval:'2. \u5FDC\u7B54\u3092\u8A55\u4FA1',ev_output:'\u63A8\u8AD6\u51FA\u529B',ev_result:'\u8A55\u4FA1\u7D50\u679C',pl_title:'\u30E2\u30C7\u30EB\u30D7\u30FC\u30EB\u7BA1\u7406',pl_select:'\u30D7\u30EA\u30ED\u30FC\u30C9\u3059\u308B\u30E2\u30C7\u30EB:',pl_preload:'\u9078\u629E\u3092\u30D7\u30EA\u30ED\u30FC\u30C9',pl_drain:'\u5168\u3066\u30C9\u30EC\u30A4\u30F3',pl_pool:'\u30D7\u30FC\u30EB\u72B6\u614B',pl_mem:'\u30E1\u30E2\u30EA\u30E2\u30CB\u30BF\u30FC',pl_diag:'\u30DC\u30C8\u30EB\u30CD\u30C3\u30AF\u8A3A\u65AD',pl_diag_run:'\u8A3A\u65AD\u3092\u5B9F\u884C',pl_rec:'\u30D1\u30D5\u30A9\u30FC\u30DE\u30F3\u30B9\u63A8\u5968',pl_rec_run:'\u63A8\u5968\u3092\u53D6\u5F97',ra_title:'\u25B6 \u5168\u30C6\u30B9\u30C8\u5B9F\u884C',ra_desc:'\u5168\u30A8\u30F3\u30C9\u30DD\u30A4\u30F3\u30C8\u30C6\u30B9\u30C8\u3092\u30E9\u30F3\u30C0\u30E0\u306A\u9806\u5E8F\u3067\u54043\u56DE\u5B9F\u884C\u3057\u3001\u30E2\u30C7\u30EB/\u30D7\u30ED\u30F3\u30D7\u30C8\u3092\u30E9\u30F3\u30C0\u30E0\u306B\u9078\u629E\u3057\u307E\u3059\u3002',ra_repeats:'\u30C6\u30B9\u30C8\u3042\u305F\u308A\u306E\u7E70\u8FD4\u3057',ra_tokens:'\u6700\u5927\u30C8\u30FC\u30AF\u30F3',ra_run:'\u25B6 \u5168\u30C6\u30B9\u30C8\u5B9F\u884C',ra_ready:'\u6E96\u5099\u5B8C\u4E86',ra_log:'\u7D50\u679C\u30ED\u30B0',ra_total:'\u5408\u8A08:',d_loading:'\u8AAD\u8FBC\u4E2D...',d_bridge_ok:'\u30D6\u30EA\u30C3\u30B8\u63A5\u7D9A\u6E08\u307F',d_bridge_err:'\u30D6\u30EA\u30C3\u30B8\u5229\u7528\u4E0D\u53EF',d_no_server:'\u30B5\u30FC\u30D0\u30FC\u306B\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093',d_done:'\u5B8C\u4E86\uFF01',d_stopped:'\u505C\u6B62\u6E08\u307F',d_select2:'2\u3064\u4EE5\u4E0A\u306E\u30E2\u30C7\u30EB\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044',d_select1:'\u30E2\u30C7\u30EB\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044',d_select1p:'1\u3064\u4EE5\u4E0A\u306E\u30E2\u30C7\u30EB\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044'},
+};
+function t(key) { return (I18N[_lang]||I18N.en)[key] || I18N.en[key] || key; }
+function setLang(lang) {
+  _lang = lang;
+  localStorage.setItem('swarm-lang', lang);
+  document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
+  document.documentElement.lang = lang;
+  $('lang-select').value = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const val = t(el.dataset.i18n);
+    el.textContent = val;
+  });
+  document.title = t('hdr_title').replace(/^\S+\s*/, 'ZenAIos — ');
+}
+
+/* ─── Init ────────────────────────────────────────────────── */
+async function init() {
+  setLang(_lang);
+  await checkStatus();
+  loadMemory();
+  loadPool();
+  scanModels();
+}
+init();
+</script>
+</body>
+</html>

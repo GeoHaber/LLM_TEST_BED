@@ -1,0 +1,38 @@
+# Binaries
+bin/
+*.dll
+*.exe
+*.so
+*.dylib
+
+# Models (too large for git)
+*.gguf
+Models/
+
+# Logs & temp
+*.log
+stderr.txt
+stdout.txt
+__out.txt
+server_err.txt
+server_out.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
