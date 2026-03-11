@@ -125,7 +125,7 @@ def start_server(exe: str, model_path: str):
             with urllib.request.urlopen(url, timeout=3) as r:
                 data = json.loads(r.read())
                 if data.get("status") == "ok":
-                    print(f"  ✅  Model loaded and ready!")
+                    print("  ✅  Model loaded and ready!")
                     return
         except Exception:
             if _srv_proc.poll() is not None:
@@ -413,10 +413,10 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
 
     httpd = http.server.HTTPServer(("", UI_PORT), ChatHandler)
-    print(f"\n  ── Chat Ready ─────────────────────────────────")
+    print("\n  ── Chat Ready ─────────────────────────────────")
     print(f"  🌐  http://localhost:{UI_PORT}")
     print(f"  📦  Model: {chosen['name']}")
-    print(f"  Press Ctrl+C to stop\n")
+    print("  Press Ctrl+C to stop\n")
 
     if not args.no_browser:
         threading.Timer(0.5, lambda: webbrowser.open(f"http://localhost:{UI_PORT}")).start()

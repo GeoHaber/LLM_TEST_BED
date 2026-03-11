@@ -31,6 +31,7 @@ Query examples (sqlite3 CLI or any LLM tool):
 
 import asyncio
 import http.server
+import logging
 import socketserver
 import socket
 import sqlite3
@@ -41,14 +42,331 @@ import time
 import threading
 import urllib.parse
 import urllib.request
+import heapq
 import uuid as _uuid
+from collections import deque
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import IntEnum
+
+logger = logging.getLogger("zenai.server")
 
 # Force UTF-8 stdout/stderr so box-drawing and emoji chars work on Windows cp1252
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+
+# ─── Optional psutil for memory monitoring ────────────────────────────────────
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    psutil = None  # type: ignore[assignment]
+    _HAS_PSUTIL = False
+
+
+# ─── Adaptive FIFO Buffer (ported from Local_LLM) ────────────────────────────
+
+
+class BackpressureTimeoutError(Exception):
+    """Raised when a FIFO buffer put() times out under backpressure.
+
+    Callers that need explicit failure handling can catch this instead of
+    checking the boolean return from put().
+
+    Example::
+
+        try:
+            _request_buffer.put(request, raise_on_timeout=True)
+        except BackpressureTimeoutError:
+            send_503(handler, "Server busy — try again shortly")
+    """
+
+
+class MessagePriority(IntEnum):
+    """Priority levels for inference requests."""
+    LOW = 1
+    NORMAL = 2
+    HIGH = 3
+    CRITICAL = 4
+
+
+@dataclass(order=True)
+class _PrioritizedItem:
+    priority: int
+    timestamp: float
+    item: object = field(compare=False)
+
+
+class ThreadSafeFIFOBuffer:
+    """Thread-safe adaptive FIFO buffer with backpressure and priority support.
+
+    Ported from Local_LLM's AdaptiveFIFOBuffer — uses threading primitives
+    instead of asyncio for compatibility with http.server handlers.
+
+    Features:
+      - Adaptive sizing (grows 1.5\u00d7 at >80% full, shrinks 0.8\u00d7 under pressure)
+      - Priority queues (CRITICAL > HIGH > NORMAL > LOW)
+      - Backpressure with configurable timeout
+      - Memory monitoring via psutil (optional)
+      - O(1) append/popleft via collections.deque
+      - Built-in metrics
+    """
+
+    def __init__(
+        self,
+        min_size: int = 5,
+        initial_size: int = 50,
+        max_size: int = 500,
+        enable_backpressure: bool = True,
+        enable_memory_monitoring: bool = True,
+        buffer_name: str = "buffer",
+    ):
+        self.min_size = min_size
+        self.initial_size = initial_size
+        self.max_size = max_size
+        self.current_max_size = initial_size
+        self.enable_backpressure = enable_backpressure
+        self.enable_memory_monitoring = enable_memory_monitoring and _HAS_PSUTIL
+        self.buffer_name = buffer_name
+
+        self._queue: deque = deque()
+        self._priority_queue: list[_PrioritizedItem] = []
+        self._lock = threading.Lock()
+        self._not_empty = threading.Condition(self._lock)
+        self._not_full = threading.Condition(self._lock)
+
+        self._metrics = {
+            "total_added": 0,
+            "total_retrieved": 0,
+            "times_grew": 0,
+            "times_shrunk": 0,
+            "peak_size": 0,
+            "backpressure_events": 0,
+            "memory_adjustments": 0,
+        }
+
+    def put(self, item: object, priority: MessagePriority = MessagePriority.NORMAL,
+            timeout: float = 30.0, raise_on_timeout: bool = False) -> bool:
+        """Add item with backpressure. Returns False on timeout.
+
+        Args:
+            raise_on_timeout: If True, raises BackpressureTimeoutError instead
+                of returning False when the buffer is full.
+        """
+        with self._not_full:
+            if self.enable_backpressure:
+                deadline = time.monotonic() + timeout
+                while self._size_unlocked() >= self.current_max_size:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not self._not_full.wait(remaining):
+                        self._metrics["backpressure_events"] += 1
+                        logger.warning(
+                            "[%s] Backpressure timeout (size=%d/%d)",
+                            self.buffer_name, self._size_unlocked(), self.current_max_size,
+                        )
+                        if raise_on_timeout:
+                            raise BackpressureTimeoutError(
+                                f"[{self.buffer_name}] Buffer full "
+                                f"({self._size_unlocked()}/{self.current_max_size}), "
+                                f"waited {timeout:.1f}s"
+                            )
+                        return False
+
+            self._adapt_size_unlocked()
+
+            if priority != MessagePriority.NORMAL:
+                entry = _PrioritizedItem(-priority.value, time.time(), item)
+                heapq.heappush(self._priority_queue, entry)
+            else:
+                self._queue.append(item)
+
+            self._metrics["total_added"] += 1
+            sz = self._size_unlocked()
+            if sz > self._metrics["peak_size"]:
+                self._metrics["peak_size"] = sz
+            self._not_empty.notify()
+            return True
+
+    def get(self, timeout: float = 5.0) -> object | None:
+        """Get next item (priority first, then FIFO). Returns None on timeout."""
+        with self._not_empty:
+            deadline = time.monotonic() + timeout
+            while self._size_unlocked() == 0:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not self._not_empty.wait(remaining):
+                    return None
+
+            if self._priority_queue:
+                item = heapq.heappop(self._priority_queue).item
+            else:
+                item = self._queue.popleft()
+
+            self._metrics["total_retrieved"] += 1
+            self._adapt_size_unlocked()
+
+            if self.enable_backpressure:
+                self._not_full.notify()
+
+            return item
+
+    def put_nowait(self, item: object) -> bool:
+        """Non-blocking put. Returns False if buffer is full."""
+        with self._lock:
+            if self.enable_backpressure and self._size_unlocked() >= self.current_max_size:
+                self._metrics["backpressure_events"] += 1
+                return False
+            self._queue.append(item)
+            self._metrics["total_added"] += 1
+            sz = self._size_unlocked()
+            if sz > self._metrics["peak_size"]:
+                self._metrics["peak_size"] = sz
+            self._not_empty.notify()
+            return True
+
+    def get_nowait(self) -> object | None:
+        """Non-blocking get. Returns None if empty."""
+        with self._lock:
+            if self._size_unlocked() == 0:
+                return None
+            if self._priority_queue:
+                item = heapq.heappop(self._priority_queue).item
+            else:
+                item = self._queue.popleft()
+            self._metrics["total_retrieved"] += 1
+            if self.enable_backpressure:
+                self._not_full.notify()
+            return item
+
+    def drain(self) -> list:
+        """Remove and return all items (priority first, then FIFO order)."""
+        with self._lock:
+            items = []
+            while self._priority_queue:
+                items.append(heapq.heappop(self._priority_queue).item)
+            items.extend(self._queue)
+            self._queue.clear()
+            self._metrics["total_retrieved"] += len(items)
+            if self.enable_backpressure:
+                self._not_full.notify_all()
+            return items
+
+    def _size_unlocked(self) -> int:
+        return len(self._queue) + len(self._priority_queue)
+
+    def size(self) -> int:
+        with self._lock:
+            return self._size_unlocked()
+
+    def is_empty(self) -> bool:
+        return self.size() == 0
+
+    def is_full(self) -> bool:
+        with self._lock:
+            return self._size_unlocked() >= self.current_max_size
+
+    def _adapt_size_unlocked(self) -> None:
+        """Adapt buffer size based on fill level and memory pressure."""
+        sz = self._size_unlocked()
+        if self.current_max_size == 0:
+            return
+        fill_pct = (sz / self.current_max_size) * 100
+
+        # GROW at >80% full
+        if fill_pct > 80 and self.current_max_size < self.max_size:
+            old = self.current_max_size
+            self.current_max_size = min(int(self.current_max_size * 1.5), self.max_size)
+            self._metrics["times_grew"] += 1
+            logger.info(
+                "[%s] Grew %d → %d (%.1f%% full)",
+                self.buffer_name, old, self.current_max_size, fill_pct,
+            )
+
+        # SHRINK at <20% full + memory pressure
+        if self.enable_memory_monitoring and fill_pct < 20:
+            mem_pct = psutil.virtual_memory().percent
+            if mem_pct > 80 and self.current_max_size > self.min_size:
+                old = self.current_max_size
+                self.current_max_size = max(int(self.current_max_size * 0.8), self.min_size)
+                self._metrics["times_shrunk"] += 1
+                self._metrics["memory_adjustments"] += 1
+                logger.info(
+                    "[%s] Shrunk %d → %d (memory pressure %.1f%%)",
+                    self.buffer_name, old, self.current_max_size, mem_pct,
+                )
+        elif not self.enable_memory_monitoring and fill_pct < 10:
+            if self.current_max_size > self.initial_size:
+                old = self.current_max_size
+                self.current_max_size = max(int(self.current_max_size * 0.8), self.initial_size)
+                self._metrics["times_shrunk"] += 1
+                logger.info(
+                    "[%s] Shrunk %d → %d (low fill %.1f%%)",
+                    self.buffer_name, old, self.current_max_size, fill_pct,
+                )
+
+    def stats(self) -> dict:
+        with self._lock:
+            sz = self._size_unlocked()
+            return {
+                "buffer_name": self.buffer_name,
+                "current_size": sz,
+                "max_size": self.current_max_size,
+                "fill_percent": round(sz / self.current_max_size * 100, 1) if self.current_max_size else 0,
+                **self._metrics,
+            }
+
+
+class InferenceMetrics:
+    """Thread-safe inference metrics tracker for observability."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._total_requests = 0
+        self._total_errors = 0
+        self._total_tokens = 0
+        self._latencies: deque[float] = deque(maxlen=100)
+        self._start_time = time.time()
+
+    def record(self, latency: float, token_count: int = 0, error: bool = False):
+        with self._lock:
+            self._total_requests += 1
+            self._latencies.append(latency)
+            self._total_tokens += token_count
+            if error:
+                self._total_errors += 1
+
+    def stats(self) -> dict:
+        with self._lock:
+            lats = list(self._latencies)
+            uptime = time.time() - self._start_time
+            avg_lat = sum(lats) / len(lats) if lats else 0
+            p95 = sorted(lats)[int(len(lats) * 0.95)] if len(lats) >= 2 else avg_lat
+            return {
+                "total_requests": self._total_requests,
+                "total_errors": self._total_errors,
+                "total_tokens_generated": self._total_tokens,
+                "avg_latency_s": round(avg_lat, 2),
+                "p95_latency_s": round(p95, 2),
+                "requests_per_minute": round(
+                    self._total_requests / max(uptime / 60, 0.01), 1
+                ),
+                "error_rate_pct": round(
+                    self._total_errors / max(self._total_requests, 1) * 100, 1
+                ),
+            }
+
+
+# Global FIFO buffer and metrics instances
+_request_buffer = ThreadSafeFIFOBuffer(
+    min_size=2, initial_size=10, max_size=50,
+    enable_backpressure=True, buffer_name="inference_requests",
+)
+_response_buffer = ThreadSafeFIFOBuffer(
+    min_size=2, initial_size=20, max_size=100,
+    enable_backpressure=False, buffer_name="inference_responses",
+)
+_inference_metrics = InferenceMetrics()
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8787
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -173,14 +491,20 @@ class _LlamaServerEngine:
         max_tokens: int = 512,
         repeat_penalty: float = 1.1,
         stream: bool = True,
+        messages: list[dict] | None = None,
+        **_kwargs,
     ):
         import json as _json
         import urllib.request as _req
 
-        msgs = []
-        if system_prompt:
-            msgs.append({"role": "system", "content": system_prompt})
-        msgs.append({"role": "user", "content": message})
+        # Use explicit multi-turn messages if provided, else build from params
+        if messages:
+            msgs = list(messages)
+        else:
+            msgs = []
+            if system_prompt:
+                msgs.append({"role": "system", "content": system_prompt})
+            msgs.append({"role": "user", "content": message})
 
         body = _json.dumps(
             {
@@ -209,19 +533,27 @@ class _LlamaServerEngine:
             with _req.urlopen(req, timeout=180) as resp:
                 for raw in resp:
                     line = raw.decode("utf-8", errors="replace").strip()
-                    if line.startswith("data: ") and line != "data: [DONE]":
-                        try:
-                            delta = _json.loads(line[6:])["choices"][0]["delta"]
-                            # 'content' = final response; 'reasoning_content' = thinking
-                            tok = delta.get("content")
-                            if tok:
-                                content_parts.append(tok)
-                            else:
-                                rtok = delta.get("reasoning_content")
-                                if rtok:
-                                    thinking_parts.append(rtok)
-                        except Exception:
-                            pass
+                    if not line.startswith("data: ") or line == "data: [DONE]":
+                        continue
+                    try:
+                        chunk = _json.loads(line[6:])
+                    except (ValueError, _json.JSONDecodeError):
+                        continue
+                    # Validate chunk structure (ported from Local_LLM _validate_chunk)
+                    choices = chunk.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    delta = choices[0].get("delta")
+                    if not isinstance(delta, dict):
+                        continue
+                    # 'content' = final response; 'reasoning_content' = thinking
+                    tok = delta.get("content")
+                    if isinstance(tok, str) and tok:
+                        content_parts.append(tok)
+                    else:
+                        rtok = delta.get("reasoning_content")
+                        if isinstance(rtok, str) and rtok:
+                            thinking_parts.append(rtok)
             # Return final response; if empty fall back to thinking tokens
             return "".join(content_parts) or "".join(thinking_parts)
 
@@ -402,7 +734,7 @@ class ZenAIEngineAdapter:
                 user_prompt = content
 
         loop = _get_llm_loop()
-        q: list[str] = []
+        q: deque[str] = deque()
         done = threading.Event()
         exc_box: list[Exception] = []
 
@@ -433,7 +765,7 @@ class ZenAIEngineAdapter:
 
         while not done.is_set() or q:
             while q:
-                tok = q.pop(0)
+                tok = q.popleft()
                 yield {"choices": [{"delta": {"content": tok}, "finish_reason": None}]}
             if not done.is_set():
                 time.sleep(0.01)
@@ -503,11 +835,18 @@ def _try_server_fallback(model_path: str):
     return _LlamaServerEngine(model_path=model_path)
 
 
-def get_llm_engine():
-    """Lazy-init the LLM engine singleton (thread-safe, double-checked lock)."""
+def get_llm_engine(blocking=True):
+    """Lazy-init the LLM engine singleton (thread-safe, double-checked lock).
+
+    When *blocking* is False (used by request handlers), returns immediately
+    with a "still loading" error instead of waiting behind the warmup thread.
+    """
     global _llm_engine, _llm_error, _llm_ready
     if _llm_ready or _llm_error is not None:
         return _llm_engine, _llm_error
+    if not blocking:
+        # Don't block request handlers while the warmup thread loads the model
+        return None, "AI engine is still loading\u2026"
     with _llm_lock:
         if _llm_ready or _llm_error is not None:
             return _llm_engine, _llm_error
@@ -1222,30 +1561,87 @@ def _handle_post_anomaly(handler, ip, payload):
     handler._send_json(200, {"ok": True})
 
 
-# ─── Conversation memory (per-badge, capped) ─────────────────────────────────
+# ─── Conversation memory with TTL and eviction (ported from Local_LLM KVCacheManager) ─
 _MAX_HISTORY = 20  # max messages per conversation (system excluded)
-_conversations: dict[str, list[dict]] = {}  # badge → [{role, content}, ...]
-_conv_lock = threading.Lock()
+_MAX_SESSIONS = 128  # max concurrent conversations before LRU eviction
+_SESSION_TTL = 1800.0  # 30 min idle timeout
+
+
+class _ConversationStore:
+    """Thread-safe conversation memory with TTL expiration and LRU eviction.
+
+    Ported from Local_LLM's KVCacheManager eviction/TTL patterns.
+    """
+
+    def __init__(self, max_history: int = 20, max_sessions: int = 128,
+                 ttl: float = 1800.0):
+        self._max_history = max_history
+        self._max_sessions = max(1, max_sessions)
+        self._ttl = ttl
+        self._lock = threading.Lock()
+        self._sessions: dict[str, dict] = {}  # key → {messages, last_access}
+
+    def get(self, key: str) -> list[dict]:
+        with self._lock:
+            self._evict_expired()
+            entry = self._sessions.get(key)
+            if entry is None:
+                return []
+            entry["last_access"] = time.monotonic()
+            return list(entry["messages"])
+
+    def append(self, key: str, role: str, content: str) -> None:
+        with self._lock:
+            self._evict_expired()
+            if key not in self._sessions:
+                if len(self._sessions) >= self._max_sessions:
+                    self._evict_oldest()
+                self._sessions[key] = {"messages": [], "last_access": time.monotonic()}
+            entry = self._sessions[key]
+            entry["messages"].append({"role": role, "content": content})
+            if len(entry["messages"]) > self._max_history:
+                entry["messages"] = entry["messages"][-self._max_history:]
+            entry["last_access"] = time.monotonic()
+
+    def clear(self, key: str) -> None:
+        with self._lock:
+            self._sessions.pop(key, None)
+
+    def active_sessions(self) -> int:
+        with self._lock:
+            return len(self._sessions)
+
+    def _evict_expired(self) -> None:
+        if self._ttl <= 0:
+            return
+        now = time.monotonic()
+        expired = [k for k, v in self._sessions.items()
+                   if now - v["last_access"] > self._ttl]
+        for k in expired:
+            del self._sessions[k]
+
+    def _evict_oldest(self) -> None:
+        if not self._sessions:
+            return
+        oldest = min(self._sessions, key=lambda k: self._sessions[k]["last_access"])
+        del self._sessions[oldest]
+
+
+_conversation_store = _ConversationStore(
+    max_history=_MAX_HISTORY, max_sessions=_MAX_SESSIONS, ttl=_SESSION_TTL,
+)
 
 
 def _get_conversation(badge: str) -> list[dict]:
-    with _conv_lock:
-        return list(_conversations.get(badge, []))
+    return _conversation_store.get(badge)
 
 
 def _append_conversation(badge: str, role: str, content: str) -> None:
-    with _conv_lock:
-        if badge not in _conversations:
-            _conversations[badge] = []
-        _conversations[badge].append({"role": role, "content": content})
-        # Keep only last _MAX_HISTORY messages
-        if len(_conversations[badge]) > _MAX_HISTORY:
-            _conversations[badge] = _conversations[badge][-_MAX_HISTORY:]
+    _conversation_store.append(badge, role, content)
 
 
 def _clear_conversation(badge: str) -> None:
-    with _conv_lock:
-        _conversations.pop(badge, None)
+    _conversation_store.clear(badge)
 
 
 # ─── Retry with exponential backoff ──────────────────────────────────────────
@@ -1253,20 +1649,60 @@ _INFERENCE_RETRIES = 2
 _INFERENCE_BACKOFF = 1.0  # seconds, doubles each retry
 
 
+def _admit_request(source: str, priority: MessagePriority = MessagePriority.NORMAL,
+                   timeout: float = 10.0) -> bool:
+    """Gate a request through the FIFO buffer for admission control.
+
+    Returns True if the request was admitted. Returns False if the buffer is
+    full (backpressure — caller should return 503).
+    """
+    admitted = _request_buffer.put(
+        {"source": source, "ts": time.time()},
+        priority=priority,
+        timeout=timeout,
+    )
+    if not admitted:
+        logger.warning("Request rejected (backpressure): source=%s", source)
+    return admitted
+
+
+def _release_request() -> None:
+    """Release a slot from the request buffer after inference completes."""
+    _request_buffer.get_nowait()
+
+
 async def _query_with_retry(engine, **kwargs):
-    """Call engine.query() with retries on failure. Yields chunks (streaming)."""
+    """Call engine.query() with retries on failure. Yields chunks (streaming).
+
+    Tracks latency and token count via _inference_metrics.
+    Publishes completed response tokens to _response_buffer for observability.
+    """
     last_exc = None
+    start = time.time()
+    token_count = 0
     for attempt in range(_INFERENCE_RETRIES + 1):
         try:
-            parts = []
             async for chunk in engine.query(**kwargs):
-                parts.append(chunk)
+                token_count += 1
                 yield chunk
+            # Track metrics + publish to response buffer
+            latency = time.time() - start
+            _inference_metrics.record(latency, token_count)
+            _response_buffer.put_nowait({
+                "tokens": token_count,
+                "latency": round(latency, 2),
+                "source": kwargs.get("message", "")[:80],
+            })
             return  # success
         except Exception as exc:
             last_exc = exc
             if attempt < _INFERENCE_RETRIES:
+                logger.warning(
+                    "Inference attempt %d/%d failed: %s — retrying",
+                    attempt + 1, _INFERENCE_RETRIES, exc,
+                )
                 await asyncio.sleep(_INFERENCE_BACKOFF * (2**attempt))
+    _inference_metrics.record(time.time() - start, token_count, error=True)
     raise last_exc  # type: ignore[misc]
 
 
@@ -1282,8 +1718,16 @@ def _clamp(val, lo, hi):
 
 
 def _handle_health(handler):
-    """GET /health — readiness check (Local_LLM compatible)."""
-    engine, err = get_llm_engine()
+    """GET /health — readiness check with memory monitoring (Local_LLM compatible)."""
+    engine, err = get_llm_engine(blocking=False)
+    memory = {}
+    if _HAS_PSUTIL:
+        vm = psutil.virtual_memory()
+        memory = {
+            "ram_total_gb": round(vm.total / (1024**3), 1),
+            "ram_free_gb": round(vm.available / (1024**3), 1),
+            "ram_used_pct": vm.percent,
+        }
     body = json.dumps(
         {
             "status": "ok" if engine and not err else "error",
@@ -1291,6 +1735,11 @@ def _handle_health(handler):
             "model": os.path.basename(str(engine.model_path))
             if engine and hasattr(engine, "model_path") and engine.model_path
             else None,
+            "memory": memory,
+            "inference": _inference_metrics.stats(),
+            "request_buffer": _request_buffer.stats(),
+            "response_buffer": _response_buffer.stats(),
+            "active_conversations": _conversation_store.active_sessions(),
         }
     ).encode()
     handler.send_response(200)
@@ -1398,7 +1847,7 @@ def _v1_stream_sse(handler, engine, query_kwargs, chat_id, model_name):
     handler.end_headers()
 
     try:
-        q: list[str] = []
+        q: deque[str] = deque()
         done_event = threading.Event()
         exc_box: list[Exception] = []
 
@@ -1415,7 +1864,7 @@ def _v1_stream_sse(handler, engine, query_kwargs, chat_id, model_name):
 
         while not done_event.is_set() or q:
             while q:
-                tok = q.pop(0)
+                tok = q.popleft()
                 evt = {
                     "id": chat_id,
                     "object": "chat.completion.chunk",
@@ -1491,7 +1940,7 @@ def _v1_collect_response(handler, engine, query_kwargs, chat_id, model_name):
 
 def _handle_v1_chat_completions(handler, payload):
     """POST /v1/chat/completions — OpenAI-compatible chat (streaming SSE + non-streaming)."""
-    engine, err = get_llm_engine()
+    engine, err = get_llm_engine(blocking=False)
     if err or engine is None:
         _v1_send_error(handler, 503, f"AI engine unavailable: {err or 'not loaded'}")
         return
@@ -1499,6 +1948,11 @@ def _handle_v1_chat_completions(handler, payload):
     query_kwargs, parse_err = _v1_parse_chat_request(payload)
     if parse_err:
         _v1_send_error(handler, 400, parse_err, "invalid_request_error")
+        return
+
+    # Admission control via request buffer
+    if not _admit_request("v1/chat/completions"):
+        _v1_send_error(handler, 503, "Server busy — try again shortly")
         return
 
     chat_id = _make_chat_id()
@@ -1513,10 +1967,12 @@ def _handle_v1_chat_completions(handler, payload):
     else:
         _v1_collect_response(handler, engine, query_kwargs, chat_id, model_name)
 
+    _release_request()
+
 
 def _handle_v1_completions(handler, payload):
     """POST /v1/completions — legacy text completion (OpenAI-compatible)."""
-    engine, err = get_llm_engine()
+    engine, err = get_llm_engine(blocking=False)
     if err or engine is None:
         body = json.dumps(
             {
@@ -1550,6 +2006,19 @@ def _handle_v1_completions(handler, payload):
     temperature = _clamp(float(payload.get("temperature", 0.7)), 0.0, 2.0)
     top_p = _clamp(float(payload.get("top_p", 0.9)), 0.0, 1.0)
     max_tokens = _clamp(int(payload.get("max_tokens", 2048)), 1, 131072)
+
+    # Admission control via request buffer
+    if not _admit_request("v1/completions"):
+        body = json.dumps(
+            {"error": {"message": "Server busy \u2014 try again shortly", "type": "server_error"}}
+        ).encode()
+        handler.send_response(503)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.send_header("Access-Control-Allow-Origin", "*")
+        handler.end_headers()
+        handler.wfile.write(body)
+        return
 
     async def _collect():
         parts = []
@@ -1603,6 +2072,8 @@ def _handle_v1_completions(handler, payload):
     handler.end_headers()
     handler.wfile.write(body)
 
+    _release_request()
+
 
 _CHAT_LANG_NAMES = {
     "en": "English",
@@ -1639,15 +2110,20 @@ def _handle_post_chat_stream(handler, ip, payload):
 
     db_insert_action(ip, badge, "chatSend", {"message": message[:200]}, now_ts())
 
-    engine, err = get_llm_engine()
+    engine, err = get_llm_engine(blocking=False)
     if err or engine is None:
         handler._send_json(
             503, {"error": f"AI engine unavailable: {err or 'not loaded'}"}
         )
         return
 
-    system = _build_chat_system_prompt(lang)
+    # Admission control via request buffer
     conv_key = badge or ip
+    if not _admit_request(f"chat-stream:{conv_key}"):
+        handler._send_json(503, {"error": "Server busy — try again shortly"})
+        return
+
+    system = _build_chat_system_prompt(lang)
     history = _get_conversation(conv_key)
     _append_conversation(conv_key, "user", message)
 
@@ -1661,7 +2137,7 @@ def _handle_post_chat_stream(handler, ip, payload):
     reply_parts: list[str] = []
 
     try:
-        q: list[str] = []
+        q: deque[str] = deque()
         done_event = threading.Event()
         exc_box: list[Exception] = []
 
@@ -1690,7 +2166,7 @@ def _handle_post_chat_stream(handler, ip, payload):
 
         while not done_event.is_set() or q:
             while q:
-                tok = q.pop(0)
+                tok = q.popleft()
                 reply_parts.append(tok)
                 handler.wfile.write(f"data: {json.dumps({'token': tok})}\n\n".encode())
                 handler.wfile.flush()
@@ -1707,6 +2183,8 @@ def _handle_post_chat_stream(handler, ip, payload):
 
     except (ConnectionResetError, BrokenPipeError):
         pass
+    finally:
+        _release_request()
 
     reply = "".join(reply_parts)
     _append_conversation(conv_key, "assistant", reply)
@@ -1872,7 +2350,7 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
             return _send_json_bytes(self, json.dumps(dl).encode())
 
         if path == "/__model":
-            engine, _ = get_llm_engine()
+            engine, _ = get_llm_engine(blocking=False)
             name = (
                 os.path.basename(str(engine.model_path))
                 if engine and engine.model_path
@@ -1996,6 +2474,15 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
                 "models": models_list,
                 "current_model_path": current_model_path,
                 "downloads": dl_status,
+                "inference_metrics": _inference_metrics.stats(),
+                "request_buffer": _request_buffer.stats(),
+                "response_buffer": _response_buffer.stats(),
+                "active_conversations": _conversation_store.active_sessions(),
+                "memory": {
+                    "ram_total_gb": round(psutil.virtual_memory().total / (1024**3), 1),
+                    "ram_free_gb": round(psutil.virtual_memory().available / (1024**3), 1),
+                    "ram_used_pct": psutil.virtual_memory().percent,
+                } if _HAS_PSUTIL else {},
             }
         ).encode()
 
@@ -2132,11 +2619,16 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
 
         db_insert_action(ip, badge, "chatSend", {"message": message[:200]}, now_ts())
 
-        engine, err = get_llm_engine()
+        engine, err = get_llm_engine(blocking=False)
         if err or engine is None:
             self._send_json(
                 503, {"error": f"AI engine unavailable: {err or 'not loaded'}"}
             )
+            return
+
+        # Admission control via request buffer
+        if not _admit_request(f"chat:{badge or ip}"):
+            self._send_json(503, {"error": "Server busy \u2014 try again shortly"})
             return
 
         _LANG_NAMES = {
@@ -2189,6 +2681,8 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
         _append_conversation(badge or ip, "assistant", reply)
         db_insert_action(ip, badge, "chatReply", {"reply": reply[:200]}, now_ts())
         self._send_json(200, {"reply": reply})
+
+        _release_request()
 
     def _post_set_model(self, ip, payload):
         model_path = str(payload.get("path", "")).strip()

@@ -2,7 +2,13 @@
 Simulates the Run All engine from swarm-test.html — hits every endpoint
 3 times in random order with random params, capturing all errors.
 """
-import json, random, time, urllib.request, urllib.error, traceback, socket
+import json
+import random
+import time
+import urllib.request
+import urllib.error
+import traceback
+import socket
 
 BASE = "http://localhost:8787"
 CATEGORIES = ["reasoning", "coding", "creative", "knowledge", "math"]

@@ -578,6 +578,84 @@ The server starts without errors — the LLM engine is **lazy-loaded on first us
 
 ---
 
+## 🔄 Adaptive FIFO Buffers & Admission Control
+
+Ported from Local_LLM's `AdaptiveFIFOBuffer`, the server uses a dual-buffer architecture for request/response coordination and admission control.
+
+### Architecture
+
+```
+HTTP Handler                          LLM Engine
+     │                                     │
+     ├── _admit_request() ──→ ┌────────────────────┐
+     │     (put to request    │  _request_buffer    │
+     │      buffer)           │  ThreadSafeFIFOBuffer│
+     │                        │  backpressure=True  │
+     │  ◄── 503 if full      └────────────────────┘
+     │                                     │
+     ├── _query_with_retry() ──────────────┤
+     │     (retries + metrics)             │
+     │                                     │
+     ├── _release_request() ◄──────────────┤
+     │     (get from request buffer)       │
+     │                                     │
+     │     response published ──→ ┌────────────────────┐
+     │                            │  _response_buffer   │
+     │                            │  ThreadSafeFIFOBuffer│
+     │                            │  backpressure=False │
+     │                            └────────────────────┘
+     │                                     │
+     └──── /health, /__admin/data ◄── stats from both buffers
+```
+
+### Adaptive Sizing
+
+Both buffers self-adjust based on load and system pressure:
+
+| Trigger | Action | Factor |
+|---------|--------|--------|
+| Fill > 80% | **Grow** buffer capacity | × 1.5 (up to `max_size`) |
+| Fill < 20% + RAM > 80% | **Shrink** buffer capacity | × 0.8 (down to `min_size`) |
+| Fill < 10% (no psutil) | **Shrink** if above initial | × 0.8 (down to `initial_size`) |
+
+### Priority Queues
+
+Requests can be tagged with priority (LOW → NORMAL → HIGH → CRITICAL). Higher-priority items are dequeued first via a `heapq` priority queue.
+
+### Backpressure
+
+When `_request_buffer` is full, `_admit_request()` returns `False` and the handler returns **503 "Server busy"** instead of piling unbounded work on the engine. Callers can also use `raise_on_timeout=True` to get a `BackpressureTimeoutError` exception.
+
+### Observability
+
+`GET /health` and `GET /__admin/data` both return live stats:
+
+```json
+{
+  "request_buffer": {
+    "buffer_name": "inference_requests",
+    "current_size": 0,
+    "max_size": 10,
+    "fill_percent": 0.0,
+    "total_added": 42,
+    "total_retrieved": 42,
+    "peak_size": 3,
+    "backpressure_events": 0
+  },
+  "response_buffer": { ... },
+  "inference": {
+    "total_requests": 42,
+    "avg_latency_s": 8.3,
+    "p95_latency_s": 14.1,
+    "error_rate_pct": 0.0
+  }
+}
+```
+
+All adaptive sizing events are logged via `logging.getLogger("zenai.server")`.
+
+---
+
 ## 🚨 Anomaly Detection
 
 Every time live data arrives from the API (or simulator), `updateDashboardUI()` compares the new snapshot against the previous one. If a threshold is crossed, the user sees a **toast alert** and the event is logged to the `anomalies` table via `POST /__anomaly`.

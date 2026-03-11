@@ -33,12 +33,12 @@ import os
 import platform
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import time
 import uuid
 import webbrowser
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Dict, Optional
 
@@ -414,9 +414,28 @@ server = LlamaServer()
 conversations = ConversationManager()
 all_models: list[ModelInfo] = []
 
+# Startup/shutdown model path — set by main() before uvicorn.run()
+_startup_model_path: Optional[str] = None
+_open_browser: bool = True
+_ui_port: int = UI_PORT
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Modern lifespan handler replacing deprecated on_event."""
+    await startup(_startup_model_path)
+    if _open_browser:
+        import threading
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{_ui_port}")).start()
+    yield
+    await server.stop()
+    log.info("Bye!")
+
+
 app = FastAPI(
     title="LLM Chat — Local AI",
     version="2.0.0",
+    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -825,6 +844,8 @@ async def startup(model_path: Optional[str] = None) -> None:
 
 
 def main():
+    global _startup_model_path, _open_browser, _ui_port
+
     import argparse
     ap = argparse.ArgumentParser(description="LLM Chat — Local AI with OpenAI API")
     ap.add_argument("--model", default="", help="Path to a .gguf model file")
@@ -832,26 +853,16 @@ def main():
     ap.add_argument("--no-browser", action="store_true", help="Don't auto-open browser")
     args = ap.parse_args()
 
-    port = args.port
+    _startup_model_path = args.model or None
+    _open_browser = not args.no_browser
+    _ui_port = args.port
 
-    @app.on_event("startup")
-    async def on_startup():
-        await startup(args.model or None)
-        if not args.no_browser:
-            import threading
-            threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+    print("\n  -- LLM Chat ------------------------------------------------------")
+    print(f"  UI:        http://localhost:{_ui_port}")
+    print(f"  OpenAI:    http://localhost:{_ui_port}/v1/chat/completions")
+    print("  Press Ctrl+C to stop\n")
 
-    @app.on_event("shutdown")
-    async def on_shutdown():
-        await server.stop()
-        log.info("Bye!")
-
-    print(f"\n  -- LLM Chat ------------------------------------------------------")
-    print(f"  UI:        http://localhost:{port}")
-    print(f"  OpenAI:    http://localhost:{port}/v1/chat/completions")
-    print(f"  Press Ctrl+C to stop\n")
-
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    uvicorn.run(app, host="0.0.0.0", port=_ui_port, log_level="warning")
 
 
 if __name__ == "__main__":
