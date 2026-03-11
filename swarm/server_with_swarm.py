@@ -45,9 +45,11 @@ import urllib.request
 import heapq
 import uuid as _uuid
 from collections import deque
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import IntEnum
+from typing import Any
 
 logger = logging.getLogger("zenai.server")
 
@@ -56,6 +58,14 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+
+# ─── Bootstrap: guarantee swarm/ is on sys.path regardless of CWD ─────────────
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+
+# ─── Centralised path config (single source of truth) ─────────────────────────
+import zen_config as _paths  # type: ignore[import-untyped]
 
 # ─── Optional psutil for memory monitoring ────────────────────────────────────
 try:
@@ -122,6 +132,7 @@ class ThreadSafeFIFOBuffer:
         enable_backpressure: bool = True,
         enable_memory_monitoring: bool = True,
         buffer_name: str = "buffer",
+        ring_mode: bool = False,
     ):
         self.min_size = min_size
         self.initial_size = initial_size
@@ -130,6 +141,7 @@ class ThreadSafeFIFOBuffer:
         self.enable_backpressure = enable_backpressure
         self.enable_memory_monitoring = enable_memory_monitoring and _HAS_PSUTIL
         self.buffer_name = buffer_name
+        self.ring_mode = ring_mode
 
         self._queue: deque = deque()
         self._priority_queue: list[_PrioritizedItem] = []
@@ -212,11 +224,22 @@ class ThreadSafeFIFOBuffer:
             return item
 
     def put_nowait(self, item: object) -> bool:
-        """Non-blocking put. Returns False if buffer is full."""
+        """Non-blocking put. Returns False if buffer is full.
+
+        In ring_mode, evicts the oldest item when full instead of rejecting.
+        """
         with self._lock:
-            if self.enable_backpressure and self._size_unlocked() >= self.current_max_size:
-                self._metrics["backpressure_events"] += 1
-                return False
+            if self._size_unlocked() >= self.current_max_size:
+                if self.ring_mode:
+                    # Evict oldest to make room
+                    if self._queue:
+                        self._queue.popleft()
+                    elif self._priority_queue:
+                        heapq.heappop(self._priority_queue)
+                    self._metrics["total_retrieved"] += 1
+                elif self.enable_backpressure:
+                    self._metrics["backpressure_events"] += 1
+                    return False
             self._queue.append(item)
             self._metrics["total_added"] += 1
             sz = self._size_unlocked()
@@ -251,6 +274,14 @@ class ThreadSafeFIFOBuffer:
             if self.enable_backpressure:
                 self._not_full.notify_all()
             return items
+
+    def recent(self, n: int = 20) -> list:
+        """Peek at up to *n* most recent items without removing them."""
+        with self._lock:
+            # Priority items first, then tail of FIFO queue
+            items: list = [e.item for e in sorted(self._priority_queue)]
+            items.extend(self._queue)
+            return items[-n:]
 
     def _size_unlocked(self) -> int:
         return len(self._queue) + len(self._priority_queue)
@@ -357,21 +388,91 @@ class InferenceMetrics:
             }
 
 
-# Global FIFO buffer and metrics instances
+# Global FIFO buffer and metrics instances — sizes from zen_config.py
+_REQUEST_BUF_MIN = _paths.REQUEST_BUF_MIN
+_REQUEST_BUF_INIT = _paths.REQUEST_BUF_INIT
+_REQUEST_BUF_MAX = _paths.REQUEST_BUF_MAX
+_RESPONSE_BUF_MAX = _paths.RESPONSE_BUF_MAX
+_MAX_CONCURRENT_PER_IP = _paths.MAX_CONCURRENT_PER_IP
+
 _request_buffer = ThreadSafeFIFOBuffer(
-    min_size=2, initial_size=10, max_size=50,
+    min_size=_REQUEST_BUF_MIN, initial_size=_REQUEST_BUF_INIT,
+    max_size=_REQUEST_BUF_MAX,
     enable_backpressure=True, buffer_name="inference_requests",
 )
 _response_buffer = ThreadSafeFIFOBuffer(
-    min_size=2, initial_size=20, max_size=100,
+    min_size=2, initial_size=20, max_size=_RESPONSE_BUF_MAX,
     enable_backpressure=False, buffer_name="inference_responses",
+    ring_mode=True,  # auto-evict oldest when full → recent-completions ring
 )
 _inference_metrics = InferenceMetrics()
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8787
-ROOT = os.path.dirname(os.path.abspath(__file__))
+
+class _ClientLimiter:
+    """Per-IP concurrent request limiter for fairness.
+
+    Prevents a single client from consuming all buffer slots.
+    Thread-safe.
+    """
+
+    def __init__(self, max_per_ip: int = 3):
+        self._max = max_per_ip
+        self._counts: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def try_acquire(self, client_id: str) -> bool:
+        """Returns True if the client has a slot available."""
+        with self._lock:
+            current = self._counts.get(client_id, 0)
+            if current >= self._max:
+                return False
+            self._counts[client_id] = current + 1
+            return True
+
+    def release(self, client_id: str) -> None:
+        with self._lock:
+            current = self._counts.get(client_id, 0)
+            if current <= 1:
+                self._counts.pop(client_id, None)
+            else:
+                self._counts[client_id] = current - 1
+
+    def active(self, client_id: str) -> int:
+        with self._lock:
+            return self._counts.get(client_id, 0)
+
+    def stats(self) -> dict:
+        with self._lock:
+            return {"max_per_ip": self._max, "active_clients": dict(self._counts)}
+
+
+_client_limiter = _ClientLimiter(max_per_ip=_MAX_CONCURRENT_PER_IP)
+
+PORT = _paths.PORT
+ROOT = _paths.SWARM_DIR
+
+# ─── Inference defaults ────────────────────────────────────────────────────────
+DEFAULT_TEMPERATURE = 0.7
+DEFAULT_TOP_P = 0.9
+DEFAULT_MAX_TOKENS = 2048
+MAX_TEMPERATURE = 2.0
+MAX_MAX_TOKENS = 131_072
+DEFAULT_REPEAT_PENALTY = 1.1
+CHAT_TEMPERATURE = 0.6
+CHAT_TOP_P = 0.85
+CHAT_MAX_TOKENS = 512
+CHAT_REPEAT_PENALTY = 1.15
+INFERENCE_TIMEOUT = 120  # seconds
+
+# ─── Input limits ──────────────────────────────────────────────────────────────
+MAX_MESSAGE_LEN = 2000
+MAX_BADGE_LEN = 64
+MAX_LANG_LEN = 10
+LOG_PREVIEW_LEN = 200
+SSE_POLL_INTERVAL = 0.02  # seconds between SSE queue checks
 
 # Late-import swarm bridge (Local_LLM integration)
+# paths.ensure_paths() already added SWARM_DIR to sys.path
 try:
     import swarm_bridge as _swarm  # type: ignore[import-untyped]
 
@@ -381,18 +482,15 @@ except ImportError:
     _SWARM_OK = False
 
 # ─── Local LLM (optional — gracefully disabled if not found) ──────────────────
-# Default: sibling folder ../Local_LLM, or override via LOCAL_LLM_PATH env var
-_LLM_ROOT = os.environ.get(
-    "LOCAL_LLM_PATH", os.path.normpath(os.path.join(ROOT, "..", "Local_LLM"))
-)
+_LLM_ROOT = _paths.LOCAL_LLM_DIR
 _llm_engine = None
 _llm_lock = threading.Lock()
 _llm_error = None  # str when unavailable, None when ok
 _llm_ready = False
 
 # ─── llama-server.exe HTTP-based engine (auto-fallback) ──────────────────────
-_LLAMA_SRV_EXE = os.environ.get("LLAMA_SERVER_EXE", r"C:\AI\bin\llama-server.exe")
-_LLAMA_SRV_PORT = int(os.environ.get("LLAMA_SERVER_PORT", "8888"))
+_LLAMA_SRV_EXE = _paths.LLAMA_SERVER_EXE
+_LLAMA_SRV_PORT = _paths.LLAMA_SERVER_PORT
 _llama_srv_proc = None  # subprocess.Popen, kept alive while server is running
 
 
@@ -436,9 +534,7 @@ def _start_llama_server(model_path: str):
         "1",
         "--no-webui",
     ]
-    print(
-        f"  [LlamaServer] Starting {os.path.basename(_LLAMA_SRV_EXE)} on :{_LLAMA_SRV_PORT}…"
-    )
+    logger.info("LlamaServer starting %s on :%s", os.path.basename(_LLAMA_SRV_EXE), _LLAMA_SRV_PORT)
     _llama_srv_proc = _sp.Popen(cmd, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
 
     deadline = time.time() + 120
@@ -450,7 +546,7 @@ def _start_llama_server(model_path: str):
 
                 data = _j.loads(resp.read())
                 if data.get("status") == "ok":
-                    print(f"  [LlamaServer] ✅ Ready — {os.path.basename(model_path)}")
+                    logger.info("LlamaServer ready — %s", os.path.basename(model_path))
                     return
                 # still loading — status is e.g. "loading model"
         except Exception:
@@ -479,7 +575,7 @@ class _LlamaServerEngine:
             self.model_path = new_path
             return True
         except Exception as exc:
-            print(f"  [LlamaServer] switch_model failed: {exc}")
+            logger.error("LlamaServer switch_model failed: %s", exc)
             return False
 
     async def query(
@@ -492,8 +588,8 @@ class _LlamaServerEngine:
         repeat_penalty: float = 1.1,
         stream: bool = True,
         messages: list[dict] | None = None,
-        **_kwargs,
-    ):
+        **_kwargs: Any,
+    ) -> AsyncGenerator[str, None]:
         import json as _json
         import urllib.request as _req
 
@@ -563,17 +659,12 @@ class _LlamaServerEngine:
 
 
 # ─── Model scan / download state ─────────────────────────────────────────────
-_MODELS_DIRS = [
-    r"C:\AI\Models",
-    os.path.join(os.path.expanduser("~"), "AppData", "Local", "lm-studio", "models"),
-    os.path.join(os.path.expanduser("~"), ".ollama", "models"),
-    os.path.normpath(os.path.join(ROOT, "..", "Local_LLM", "models")),
-]
+_MODELS_DIRS = _paths.MODELS_DIRS
 _download_status: dict = {}  # key = filename → {state, progress, error}
 _download_lock = threading.Lock()
 
 
-def scan_gguf_models():
+def scan_gguf_models() -> list[dict[str, Any]]:
     """Return list of {name, path, size_gb} for every .gguf ≥ 50 MB found."""
     seen = set()
     models = []
@@ -608,8 +699,6 @@ def _do_switch_model(new_path: str) -> tuple[bool, str]:
         return False, f"File not found: {new_path}"
     with _llm_lock:
         try:
-            if _LLM_ROOT not in sys.path:
-                sys.path.insert(0, _LLM_ROOT)
             engine = _llm_engine
             if engine is None:
                 # Engine not yet loaded — try Python binding first, then llama-server
@@ -622,7 +711,7 @@ def _do_switch_model(new_path: str) -> tuple[bool, str]:
                         return FIFOLlamaCppInference(model_path=path)
 
                     future = asyncio.run_coroutine_threadsafe(_make(new_path), loop)
-                    new_engine = future.result(timeout=120)
+                    new_engine = future.result(timeout=INFERENCE_TIMEOUT)
                     if new_engine._init_error:
                         raise RuntimeError(new_engine._init_error)
                 except Exception:
@@ -641,16 +730,16 @@ def _do_switch_model(new_path: str) -> tuple[bool, str]:
                     else _async_switch(engine, new_path),
                     loop,
                 )
-                ok = future.result(timeout=120)
+                ok = future.result(timeout=INFERENCE_TIMEOUT)
                 if not ok:
                     raise RuntimeError("switch_model returned False")
                 _llm_error = None
             name = os.path.basename(new_path)
-            print(f"  [LLM] ✅ Switched to {name}")
+            logger.info("LLM switched to %s", name)
             return True, name
         except Exception as exc:
             _llm_error = str(exc)
-            print(f"  [LLM] ❌ Switch failed: {exc}")
+            logger.error("LLM switch failed: %s", exc)
             return False, str(exc)
 
 
@@ -685,7 +774,7 @@ def _find_default_model() -> str:
     if model and os.path.isfile(model):
         return model
     if model:
-        print(f"  [LLM] ⚠ DEFAULT_MODEL not found: {model} — auto-detecting")
+        logger.warning("DEFAULT_MODEL not found: %s — auto-detecting", model)
     for mdir in _MODELS_DIRS:
         if not os.path.isdir(mdir):
             continue
@@ -802,8 +891,6 @@ def _try_python_binding(model_path: str):
         raise FileNotFoundError(
             f"Local_LLM not found at {_LLM_ROOT}. Set LOCAL_LLM_PATH env var."
         )
-    if _LLM_ROOT not in sys.path:
-        sys.path.insert(0, _LLM_ROOT)
     from Core.services.inference_engine import (  # type: ignore[import-not-found]
         FIFOLlamaCppInference,
         LLAMA_CPP_AVAILABLE,
@@ -835,7 +922,7 @@ def _try_server_fallback(model_path: str):
     return _LlamaServerEngine(model_path=model_path)
 
 
-def get_llm_engine(blocking=True):
+def get_llm_engine(blocking: bool = True) -> tuple[Any | None, str | None]:
     """Lazy-init the LLM engine singleton (thread-safe, double-checked lock).
 
     When *blocking* is False (used by request handlers), returns immediately
@@ -857,25 +944,23 @@ def get_llm_engine(blocking=True):
             mname = os.path.basename(str(_llm_engine.model_path))
             try:
                 mgb = os.path.getsize(str(_llm_engine.model_path)) / (1024**3)
-                print(f"  [LLM] ✅ Ready — {mname}  ({mgb:.1f} GB)")
+                logger.info("LLM ready — %s  (%.1f GB)", mname, mgb)
             except OSError:
-                print(f"  [LLM] ✅ Ready — {mname}")
+                logger.info("LLM ready — %s", mname)
         except Exception as exc:
             bind_err = str(exc)
-            print(f"  [LLM] ❌ Python binding unavailable: {bind_err}")
+            logger.warning("LLM Python binding unavailable: %s", bind_err)
             try:
                 _llm_engine = _try_server_fallback(model or _find_default_model())
                 _llm_ready = True
-                print(
-                    f"  [LLM] ✅ llama-server.exe backend active — {os.path.basename(model)}"
-                )
+                logger.info("LLM llama-server.exe backend active — %s", os.path.basename(model))
             except Exception as srv_exc:
                 _llm_error = f"Python binding: {bind_err}; llama-server: {srv_exc}"
-                print(f"  [LLM] ❌ All backends failed: {_llm_error}")
+                logger.error("LLM all backends failed: %s", _llm_error)
     return _llm_engine, _llm_error
 
 
-DB_PATH = os.path.join(ROOT, "zenai_activity.db")
+DB_PATH = _paths.DB_PATH
 
 # ─── SQLite — one connection per thread ────────────────────────────────────────
 _local = threading.local()
@@ -1081,7 +1166,7 @@ def parse_ua(ua):
     return device, browser, os_name
 
 
-def record_hit(ip, path, status, ua):
+def record_hit(ip: str, path: str, status: int, ua: str) -> None:
     device, browser, os_name = parse_ua(ua)
     ts = now_ts()
     if ip not in sessions:
@@ -1529,14 +1614,15 @@ def _send_json_bytes(handler, body: bytes) -> None:
     handler.send_response(200)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Access-Control-Allow-Origin", "*")
     handler.send_header("Cache-Control", "no-store")
     handler.end_headers()
     handler.wfile.write(body)
 
 
 def _handle_post_log(handler, ip, payload):
-    badge = str(payload.get("badge", ""))[:64]
-    action = str(payload.get("action", ""))[:64]
+    badge = str(payload.get("badge", ""))[:MAX_BADGE_LEN]
+    action = str(payload.get("action", ""))[:MAX_BADGE_LEN]
     detail = payload.get("detail", {})
     if not isinstance(detail, dict):
         detail = {"value": str(detail)[:256]}
@@ -1545,15 +1631,15 @@ def _handle_post_log(handler, ip, payload):
 
 
 def _handle_post_ack(handler, ip, payload):
-    badge = str(payload.get("badge", ""))[:64]
-    alert_key = str(payload.get("alertKey", ""))[:64]
+    badge = str(payload.get("badge", ""))[:MAX_BADGE_LEN]
+    alert_key = str(payload.get("alertKey", ""))[:MAX_BADGE_LEN]
     db_insert_ack(alert_key, badge, ip, now_ts())
     db_insert_action(ip, badge, "ackAlert", {"alertKey": alert_key}, now_ts())
     handler._send_json(200, {"ok": True})
 
 
 def _handle_post_anomaly(handler, ip, payload):
-    atype = str(payload.get("type", "unknown"))[:64]
+    atype = str(payload.get("type", "unknown"))[:MAX_BADGE_LEN]
     message = str(payload.get("message", ""))[:256]
     value = float(payload.get("value", 0) or 0)
     threshold = float(payload.get("threshold", 0) or 0)
@@ -1649,26 +1735,42 @@ _INFERENCE_RETRIES = 2
 _INFERENCE_BACKOFF = 1.0  # seconds, doubles each retry
 
 
-def _admit_request(source: str, priority: MessagePriority = MessagePriority.NORMAL,
+def _admit_request(source: str, client_ip: str = "",
+                   priority: MessagePriority = MessagePriority.NORMAL,
                    timeout: float = 10.0) -> bool:
     """Gate a request through the FIFO buffer for admission control.
 
-    Returns True if the request was admitted. Returns False if the buffer is
-    full (backpressure — caller should return 503).
+    Checks per-client fairness first (if client_ip given), then the
+    global request buffer.  Returns False if rejected — caller should
+    return 503.
     """
+    # Per-client fairness check
+    if client_ip and not _client_limiter.try_acquire(client_ip):
+        logger.warning(
+            "Request rejected (per-IP limit %d): source=%s ip=%s",
+            _MAX_CONCURRENT_PER_IP, source, client_ip,
+        )
+        return False
+
     admitted = _request_buffer.put(
         {"source": source, "ts": time.time()},
         priority=priority,
         timeout=timeout,
     )
     if not admitted:
+        # Roll back the per-client slot we just acquired
+        if client_ip:
+            _client_limiter.release(client_ip)
         logger.warning("Request rejected (backpressure): source=%s", source)
     return admitted
 
 
-def _release_request() -> None:
+def _release_request(client_ip: str = "") -> None:
     """Release a slot from the request buffer after inference completes."""
-    _request_buffer.get_nowait()
+    if _request_buffer.get_nowait() is None:
+        logger.warning("_release_request: buffer was already empty (double-release?)")
+    if client_ip:
+        _client_limiter.release(client_ip)
 
 
 async def _query_with_retry(engine, **kwargs):
@@ -1739,6 +1841,8 @@ def _handle_health(handler):
             "inference": _inference_metrics.stats(),
             "request_buffer": _request_buffer.stats(),
             "response_buffer": _response_buffer.stats(),
+            "recent_completions": _response_buffer.recent(10),
+            "client_limiter": _client_limiter.stats(),
             "active_conversations": _conversation_store.active_sessions(),
         }
     ).encode()
@@ -1798,10 +1902,10 @@ def _v1_parse_chat_request(payload):
     if not messages:
         return None, "messages required"
 
-    temperature = _clamp(float(payload.get("temperature", 0.7)), 0.0, 2.0)
-    top_p = _clamp(float(payload.get("top_p", 0.9)), 0.0, 1.0)
-    max_tokens = _clamp(int(payload.get("max_tokens", 2048)), 1, 131072)
-    repeat_penalty = float(payload.get("repeat_penalty", 1.1))
+    temperature = _clamp(float(payload.get("temperature", DEFAULT_TEMPERATURE)), 0.0, MAX_TEMPERATURE)
+    top_p = _clamp(float(payload.get("top_p", DEFAULT_TOP_P)), 0.0, 1.0)
+    max_tokens = _clamp(int(payload.get("max_tokens", DEFAULT_MAX_TOKENS)), 1, MAX_MAX_TOKENS)
+    repeat_penalty = float(payload.get("repeat_penalty", DEFAULT_REPEAT_PENALTY))
 
     system_prompt = ""
     user_prompt = ""
@@ -1849,11 +1953,14 @@ def _v1_stream_sse(handler, engine, query_kwargs, chat_id, model_name):
     try:
         q: deque[str] = deque()
         done_event = threading.Event()
+        cancel_event = threading.Event()
         exc_box: list[Exception] = []
 
         async def _pump():
             try:
                 async for chunk in _query_with_retry(engine, **query_kwargs):
+                    if cancel_event.is_set():
+                        break
                     q.append(chunk)
             except Exception as e:
                 exc_box.append(e)
@@ -1893,7 +2000,8 @@ def _v1_stream_sse(handler, engine, query_kwargs, chat_id, model_name):
         handler.wfile.write(b"data: [DONE]\n\n")
         handler.wfile.flush()
     except (ConnectionResetError, BrokenPipeError):
-        pass
+        cancel_event.set()
+        logger.info("Client disconnected during v1/chat SSE stream")
 
 
 def _v1_collect_response(handler, engine, query_kwargs, chat_id, model_name):
@@ -1907,7 +2015,7 @@ def _v1_collect_response(handler, engine, query_kwargs, chat_id, model_name):
 
     try:
         future = asyncio.run_coroutine_threadsafe(_collect(), _get_llm_loop())
-        reply = future.result(timeout=120)
+        reply = future.result(timeout=INFERENCE_TIMEOUT)
     except Exception as exc:
         _v1_send_error(handler, 500, str(exc))
         return
@@ -1951,7 +2059,8 @@ def _handle_v1_chat_completions(handler, payload):
         return
 
     # Admission control via request buffer
-    if not _admit_request("v1/chat/completions"):
+    client_ip = handler.client_address[0]
+    if not _admit_request("v1/chat/completions", client_ip=client_ip):
         _v1_send_error(handler, 503, "Server busy — try again shortly")
         return
 
@@ -1967,7 +2076,7 @@ def _handle_v1_chat_completions(handler, payload):
     else:
         _v1_collect_response(handler, engine, query_kwargs, chat_id, model_name)
 
-    _release_request()
+    _release_request(client_ip=client_ip)
 
 
 def _handle_v1_completions(handler, payload):
@@ -2008,7 +2117,8 @@ def _handle_v1_completions(handler, payload):
     max_tokens = _clamp(int(payload.get("max_tokens", 2048)), 1, 131072)
 
     # Admission control via request buffer
-    if not _admit_request("v1/completions"):
+    client_ip = handler.client_address[0]
+    if not _admit_request("v1/completions", client_ip=client_ip):
         body = json.dumps(
             {"error": {"message": "Server busy \u2014 try again shortly", "type": "server_error"}}
         ).encode()
@@ -2035,7 +2145,7 @@ def _handle_v1_completions(handler, payload):
 
     try:
         future = asyncio.run_coroutine_threadsafe(_collect(), _get_llm_loop())
-        text = future.result(timeout=120)
+        text = future.result(timeout=INFERENCE_TIMEOUT)
     except Exception as exc:
         body = json.dumps(
             {"error": {"message": str(exc), "type": "server_error"}}
@@ -2072,7 +2182,7 @@ def _handle_v1_completions(handler, payload):
     handler.end_headers()
     handler.wfile.write(body)
 
-    _release_request()
+    _release_request(client_ip=client_ip)
 
 
 _CHAT_LANG_NAMES = {
@@ -2101,14 +2211,14 @@ def _build_chat_system_prompt(lang):
 
 def _handle_post_chat_stream(handler, ip, payload):
     """SSE streaming chat with multi-turn memory and retry (module-level)."""
-    message = str(payload.get("message", "")).strip()[:2000]
-    badge = str(payload.get("badge", ""))[:64]
-    lang = str(payload.get("lang", "en"))[:10]
+    message = str(payload.get("message", "")).strip()[:MAX_MESSAGE_LEN]
+    badge = str(payload.get("badge", ""))[:MAX_BADGE_LEN]
+    lang = str(payload.get("lang", "en"))[:MAX_LANG_LEN]
     if not message:
         handler._send_json(400, {"error": "empty message"})
         return
 
-    db_insert_action(ip, badge, "chatSend", {"message": message[:200]}, now_ts())
+    db_insert_action(ip, badge, "chatSend", {"message": message[:LOG_PREVIEW_LEN]}, now_ts())
 
     engine, err = get_llm_engine(blocking=False)
     if err or engine is None:
@@ -2119,7 +2229,7 @@ def _handle_post_chat_stream(handler, ip, payload):
 
     # Admission control via request buffer
     conv_key = badge or ip
-    if not _admit_request(f"chat-stream:{conv_key}"):
+    if not _admit_request(f"chat-stream:{conv_key}", client_ip=ip):
         handler._send_json(503, {"error": "Server busy — try again shortly"})
         return
 
@@ -2139,6 +2249,7 @@ def _handle_post_chat_stream(handler, ip, payload):
     try:
         q: deque[str] = deque()
         done_event = threading.Event()
+        cancel_event = threading.Event()
         exc_box: list[Exception] = []
 
         async def _pump():
@@ -2147,15 +2258,17 @@ def _handle_post_chat_stream(handler, ip, payload):
                     engine,
                     message=message,
                     system_prompt=system,
-                    temperature=0.6,
-                    top_p=0.85,
-                    max_tokens=512,
-                    repeat_penalty=1.15,
+                    temperature=CHAT_TEMPERATURE,
+                    top_p=CHAT_TOP_P,
+                    max_tokens=CHAT_MAX_TOKENS,
+                    repeat_penalty=CHAT_REPEAT_PENALTY,
                     stream=True,
                     messages=[{"role": "system", "content": system}]
                     + history
                     + [{"role": "user", "content": message}],
                 ):
+                    if cancel_event.is_set():
+                        break
                     q.append(chunk)
             except Exception as e:
                 exc_box.append(e)
@@ -2171,7 +2284,7 @@ def _handle_post_chat_stream(handler, ip, payload):
                 handler.wfile.write(f"data: {json.dumps({'token': tok})}\n\n".encode())
                 handler.wfile.flush()
             if not done_event.is_set():
-                time.sleep(0.02)
+                time.sleep(SSE_POLL_INTERVAL)
 
         if exc_box:
             handler.wfile.write(
@@ -2182,18 +2295,19 @@ def _handle_post_chat_stream(handler, ip, payload):
         handler.wfile.flush()
 
     except (ConnectionResetError, BrokenPipeError):
-        pass
+        cancel_event.set()
+        logger.info("Client disconnected during chat SSE stream")
     finally:
-        _release_request()
+        _release_request(client_ip=ip)
 
     reply = "".join(reply_parts)
     _append_conversation(conv_key, "assistant", reply)
-    db_insert_action(ip, badge, "chatReply", {"reply": reply[:200]}, now_ts())
+    db_insert_action(ip, badge, "chatReply", {"reply": reply[:LOG_PREVIEW_LEN]}, now_ts())
 
 
 def _handle_post_chat_clear(handler, ip, payload):
     """Clear conversation history for a badge (module-level)."""
-    badge = str(payload.get("badge", ""))[:64]
+    badge = str(payload.get("badge", ""))[:MAX_BADGE_LEN]
     _clear_conversation(badge or ip)
     handler._send_json(200, {"ok": True})
 
@@ -2291,120 +2405,47 @@ def _handle_swarm_post(handler, action, payload):
         handler.send_header("Access-Control-Allow-Origin", "*")
         handler.end_headers()
         handler.wfile.write(body)
+    except (ValueError, TypeError, KeyError, AttributeError, FileNotFoundError) as exc:
+        handler._send_json(400, {"error": str(exc)})
     except Exception as exc:
         handler._send_json(500, {"error": str(exc)})
 
 
-# ─── Request handler ───────────────────────────────────────────────────────────
-class ZenHandler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=ROOT, **kwargs)
+# ─── Handler mixins ────────────────────────────────────────────────────────────
+class _AdminMixin:
+    """Admin-panel GET endpoints and JSON builders (mixed into ZenHandler)."""
 
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        ip = self.client_address[0]
-        ua = self.headers.get("User-Agent", "")
+    def _get_admin_page(self) -> None:
+        html = ADMIN_HTML.replace("__LOCAL_IP__", LOCAL_IP).replace(
+            "__PORT__", str(PORT)
+        )
+        body = html.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
-        # Admin routes — don't log these into the activity feed
-        if path == "/__admin":
-            html = ADMIN_HTML.replace("__LOCAL_IP__", LOCAL_IP).replace(
-                "__PORT__", str(PORT)
-            )
-            body = html.encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
+    def _get_admin_models(self) -> None:
+        engine = _llm_engine
+        current = (
+            str(engine.model_path)
+            if engine and hasattr(engine, "model_path") and engine.model_path
+            else ""
+        )
+        models = scan_gguf_models()
+        with _download_lock:
+            dl = dict(_download_status)
+        body = json.dumps(
+            {"models": models, "current": current, "downloads": dl},
+            ensure_ascii=False,
+        ).encode()
+        _send_json_bytes(self, body)
 
-        if path == "/__admin/data":
-            return _send_json_bytes(self, self._admin_json())
-
-        if path == "/__admin/db-stats":
-            return _send_json_bytes(self, self._db_stats_json())
-
-        if path == "/__admin/actions":
-            return _send_json_bytes(self, self._actions_json())
-
-        if path == "/__admin/models":
-            engine = _llm_engine
-            current = (
-                str(engine.model_path)
-                if engine and hasattr(engine, "model_path") and engine.model_path
-                else ""
-            )
-            models = scan_gguf_models()
-            with _download_lock:
-                dl = dict(_download_status)
-            body = json.dumps(
-                {"models": models, "current": current, "downloads": dl},
-                ensure_ascii=False,
-            ).encode()
-            return _send_json_bytes(self, body)
-
-        if path == "/__admin/download-status":
-            with _download_lock:
-                dl = dict(_download_status)
-            return _send_json_bytes(self, json.dumps(dl).encode())
-
-        if path == "/__model":
-            engine, _ = get_llm_engine(blocking=False)
-            name = (
-                os.path.basename(str(engine.model_path))
-                if engine and engine.model_path
-                else "not loaded"
-            )
-            return _send_json_bytes(self, json.dumps({"model": name}).encode())
-
-        # ── OpenAI-compatible API routes ──
-        if path == "/health":
-            return _handle_health(self)
-        if path == "/v1/models":
-            return _handle_v1_models(self)
-
-        # ── Swarm test routes (GET) ──
-        if path == "/__swarm/status":
-            return _send_json_bytes(self, json.dumps(
-                _swarm.status() if _swarm else {"available": False, "error": "swarm_bridge not imported"}
-            ).encode())
-        if path == "/__swarm/models":
-            return _send_json_bytes(self, json.dumps(
-                {"models": _swarm.list_models()} if _swarm else {"models": scan_gguf_models()}
-            ).encode())
-        if path == "/__swarm/prompts":
-            return _send_json_bytes(self, json.dumps(
-                _swarm.get_prompts() if _swarm else {"categories": {}, "total": 0}
-            ).encode())
-        if path == "/__swarm/random-prompt":
-            return _send_json_bytes(self, json.dumps(
-                _swarm.get_random_prompt() if _swarm else {"prompt": "Explain recursion."}
-            ).encode())
-        if path == "/__swarm/pool":
-            return _send_json_bytes(self, json.dumps(
-                _swarm.pool_status() if _swarm else {"enabled": False, "size": 0}
-            ).encode())
-        if path == "/__swarm/memory":
-            return _send_json_bytes(self, json.dumps(
-                _swarm.memory_snapshot() if _swarm else {"error": "bridge unavailable"}
-            ).encode())
-
-        # Silence favicon.ico — return empty 204 so browser stops requesting it
-        if path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
-            return
-
-        # Serve the actual file and record the hit
-        # Capture status by wrapping send_response
-        self._status_code = 200
-        super().do_GET()
-        record_hit(ip, path or "/", self._status_code, ua)
-
-    def send_response(self, code, message=None):
-        self._status_code = code
-        super().send_response(code, message)
+    def _get_download_status(self) -> None:
+        with _download_lock:
+            dl = dict(_download_status)
+        _send_json_bytes(self, json.dumps(dl).encode())
 
     def _admin_json(self):
         now = now_ts()
@@ -2434,15 +2475,13 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
         h, r = divmod(uptime_s, 3600)
         m, s_ = divmod(r, 60)
         uptime = f"{h}h {m}m {s_}s" if h else f"{m}m {s_}s"
-        # Read LLM state WITHOUT triggering a load (avoids blocking admin panel)
         engine = _llm_engine
         llm_model = (
             os.path.basename(str(engine.model_path))
             if engine and hasattr(engine, "model_path") and engine.model_path
-            else ("loading…" if not _llm_error else "unavailable")
+            else ("loading\u2026" if not _llm_error else "unavailable")
         )
 
-        # Recent login events from DB
         login_events = []
         try:
             conn = get_db()
@@ -2456,7 +2495,6 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
             pass
 
         models_list = scan_gguf_models()
-        # Read current model path without blocking on LLM load
         current_model_path = (
             str(engine.model_path)
             if engine and hasattr(engine, "model_path") and engine.model_path
@@ -2477,6 +2515,8 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
                 "inference_metrics": _inference_metrics.stats(),
                 "request_buffer": _request_buffer.stats(),
                 "response_buffer": _response_buffer.stats(),
+                "recent_completions": _response_buffer.recent(10),
+                "client_limiter": _client_limiter.stats(),
                 "active_conversations": _conversation_store.active_sessions(),
                 "memory": {
                     "ram_total_gb": round(psutil.virtual_memory().total / (1024**3), 1),
@@ -2545,144 +2585,18 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as exc:
             return json.dumps({"error": str(exc)}).encode()
 
-    # ── POST handler ──────────────────────────────────────────────────────────
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.end_headers()
 
-    def _send_json(self, code, data):
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+class _ModelMixin:
+    """Model management endpoints (mixed into ZenHandler)."""
 
-    def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        length = int(self.headers.get("Content-Length", 0) or 0)
-        raw = self.rfile.read(length) if length else b"{}"
-        try:
-            payload = json.loads(raw)
-        except Exception:
-            payload = {}
-
-        ip = self.client_address[0]
-        # ── OpenAI-compatible API routes (handler, payload only) ──
-        if path == "/v1/chat/completions":
-            return _handle_v1_chat_completions(self, payload)
-        if path == "/v1/completions":
-            return _handle_v1_completions(self, payload)
-
-        dispatch = {
-            "/__log": lambda ip, p: _handle_post_log(self, ip, p),
-            "/__ack": lambda ip, p: _handle_post_ack(self, ip, p),
-            "/__anomaly": lambda ip, p: _handle_post_anomaly(self, ip, p),
-            "/__chat": self._post_chat,
-            "/__chat-stream": lambda ip, p: _handle_post_chat_stream(self, ip, p),
-            "/__chat-clear": lambda ip, p: _handle_post_chat_clear(self, ip, p),
-            "/__admin/set-model": self._post_set_model,
-            "/__admin/download-model": self._post_download_model,
-            "/__handover": self._post_handover,
-            "/__swarm/arena": lambda ip, p: _handle_swarm_post(self, "arena", p),
-            "/__swarm/benchmark": lambda ip, p: _handle_swarm_post(self, "benchmark", p),
-            "/__swarm/inference": lambda ip, p: _handle_swarm_post(self, "inference", p),
-            "/__swarm/evaluate": lambda ip, p: _handle_swarm_post(self, "evaluate", p),
-            "/__swarm/marathon-round": lambda ip, p: _handle_swarm_post(self, "marathon-round", p),
-            "/__swarm/diagnose": lambda ip, p: _handle_swarm_post(self, "diagnose", p),
-            "/__swarm/pool/preload": lambda ip, p: _handle_swarm_post(self, "pool-preload", p),
-            "/__swarm/pool/drain": lambda ip, p: _handle_swarm_post(self, "pool-drain", p),
-            "/__swarm/recommendations": lambda ip, p: _handle_swarm_post(self, "recommendations", p),
-        }
-        handler = dispatch.get(path)
-        if handler:
-            handler(ip, payload)
-        else:
-            self._send_json(404, {"error": "endpoint not found"})
-
-    # ── POST endpoint handlers ─────────────────────────────────────────────
-
-    def _post_chat(self, ip, payload):
-        """Non-streaming chat with multi-turn memory and retry."""
-        message = str(payload.get("message", "")).strip()[:2000]
-        badge = str(payload.get("badge", ""))[:64]
-        lang = str(payload.get("lang", "en"))[:10]
-        if not message:
-            self._send_json(400, {"error": "empty message"})
-            return
-
-        db_insert_action(ip, badge, "chatSend", {"message": message[:200]}, now_ts())
-
-        engine, err = get_llm_engine(blocking=False)
-        if err or engine is None:
-            self._send_json(
-                503, {"error": f"AI engine unavailable: {err or 'not loaded'}"}
-            )
-            return
-
-        # Admission control via request buffer
-        if not _admit_request(f"chat:{badge or ip}"):
-            self._send_json(503, {"error": "Server busy \u2014 try again shortly"})
-            return
-
-        _LANG_NAMES = {
-            "en": "English",
-            "ro": "Romanian",
-            "hu": "Hungarian",
-            "de": "German",
-            "fr": "French",
-        }
-        _reply_lang = _LANG_NAMES.get(lang, "English")
-        SYSTEM = (
-            "You are ZenAI, a smart assistant embedded in ZenAIos — a hospital operations dashboard. "
-            "Answer the user's question directly and accurately. "
-            "If the question is about hospital operations, clinical data, triage, or patient flow, "
-            "give a concise (2–5 sentences) actionable answer and remind the user to verify clinical "
-            "data in the official EMR system. "
-            "For all other questions (general knowledge, calculations, language, images, etc.), "
-            "just answer normally without forcing a medical angle. "
-            f"IMPORTANT: Always reply in {_reply_lang}, regardless of the language you were trained in."
+    def _get_model_name(self) -> None:
+        engine, _ = get_llm_engine(blocking=False)
+        name = (
+            os.path.basename(str(engine.model_path))
+            if engine and engine.model_path
+            else "not loaded"
         )
-
-        # Build multi-turn messages
-        history = _get_conversation(badge or ip)
-        _append_conversation(badge or ip, "user", message)
-
-        async def _collect_reply():
-            parts = []
-            async for chunk in _query_with_retry(
-                engine,
-                message=message,
-                system_prompt=SYSTEM,
-                temperature=0.6,
-                top_p=0.85,
-                max_tokens=512,
-                repeat_penalty=1.15,
-                stream=True,
-                messages=[{"role": "system", "content": SYSTEM}]
-                + history
-                + [{"role": "user", "content": message}],
-            ):
-                parts.append(chunk)
-            return "".join(parts)
-
-        try:
-            future = asyncio.run_coroutine_threadsafe(_collect_reply(), _get_llm_loop())
-            reply = future.result(timeout=120)
-        except Exception as exc:
-            reply = f"❌ Inference error: {exc}"
-
-        _append_conversation(badge or ip, "assistant", reply)
-        db_insert_action(ip, badge, "chatReply", {"reply": reply[:200]}, now_ts())
-        self._send_json(200, {"reply": reply})
-
-        _release_request()
+        _send_json_bytes(self, json.dumps({"model": name}).encode())
 
     def _post_set_model(self, ip, payload):
         model_path = str(payload.get("path", "")).strip()
@@ -2744,7 +2658,7 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
                         "path": local_path,
                         "error": None,
                     }
-                print(f"  [DL] ✅ {filename} ready at {local_path}")
+                logger.info("Download complete: %s ready at %s", filename, local_path)
             except Exception as exc:
                 with _download_lock:
                     _download_status[key] = {
@@ -2752,13 +2666,232 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
                         "progress": 0,
                         "error": str(exc),
                     }
-                print(f"  [DL] ❌ {filename}: {exc}")
+                logger.error("Download failed: %s: %s", filename, exc)
 
         threading.Thread(target=_download, daemon=True, name=f"dl-{key}").start()
         self._send_json(200, {"ok": True, "state": "started", "filename": filename})
 
+
+# ─── Request handler ───────────────────────────────────────────────────────────
+class ZenHandler(_AdminMixin, _ModelMixin, http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=ROOT, **kwargs)
+
+    def do_GET(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        ip = self.client_address[0]
+        ua = self.headers.get("User-Agent", "")
+
+        # Route dispatch table — same pattern as do_POST
+        _get_routes: dict[str, callable] = {
+            "/__admin":           lambda: self._get_admin_page(),
+            "/__admin/data":      lambda: _send_json_bytes(self, self._admin_json()),
+            "/__admin/db-stats":  lambda: _send_json_bytes(self, self._db_stats_json()),
+            "/__admin/actions":   lambda: _send_json_bytes(self, self._actions_json()),
+            "/__admin/models":    lambda: self._get_admin_models(),
+            "/__admin/download-status": lambda: self._get_download_status(),
+            "/__model":           lambda: self._get_model_name(),
+            "/health":            lambda: _handle_health(self),
+            "/v1/models":         lambda: _handle_v1_models(self),
+            "/__swarm/status":    lambda: self._get_swarm_status(),
+            "/__swarm/models":    lambda: self._get_swarm_models(),
+            "/__swarm/prompts":   lambda: self._get_swarm_prompts(),
+            "/__swarm/random-prompt": lambda: self._get_swarm_random_prompt(),
+            "/__swarm/pool":      lambda: self._get_swarm_pool(),
+            "/__swarm/memory":    lambda: self._get_swarm_memory(),
+            "/favicon.ico":       lambda: self._send_no_content(),
+        }
+
+        handler = _get_routes.get(path)
+        if handler:
+            handler()
+            return
+
+        # Default: serve the actual file and record the hit
+        self._status_code = 200
+        super().do_GET()
+        record_hit(ip, path or "/", self._status_code, ua)
+
+    def _get_swarm_status(self) -> None:
+        _send_json_bytes(self, json.dumps(
+            _swarm.status() if _swarm else {"available": False, "error": "swarm_bridge not imported"}
+        ).encode())
+
+    def _get_swarm_models(self) -> None:
+        _send_json_bytes(self, json.dumps(
+            {"models": _swarm.list_models()} if _swarm else {"models": scan_gguf_models()}
+        ).encode())
+
+    def _get_swarm_prompts(self) -> None:
+        _send_json_bytes(self, json.dumps(
+            _swarm.get_prompts() if _swarm else {"categories": {}, "total": 0}
+        ).encode())
+
+    def _get_swarm_random_prompt(self) -> None:
+        _send_json_bytes(self, json.dumps(
+            _swarm.get_random_prompt() if _swarm else {"prompt": "Explain recursion."}
+        ).encode())
+
+    def _get_swarm_pool(self) -> None:
+        _send_json_bytes(self, json.dumps(
+            _swarm.pool_status() if _swarm else {"enabled": False, "size": 0}
+        ).encode())
+
+    def _get_swarm_memory(self) -> None:
+        _send_json_bytes(self, json.dumps(
+            _swarm.memory_snapshot() if _swarm else {"error": "bridge unavailable"}
+        ).encode())
+
+    def _send_no_content(self) -> None:
+        self.send_response(204)
+        self.end_headers()
+
+    def send_response(self, code, message=None):
+        self._status_code = code
+        super().send_response(code, message)
+
+    # ── POST handler ──────────────────────────────────────────────────────────
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.end_headers()
+
+    def _send_json(self, code, data):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            payload = {}
+
+        ip = self.client_address[0]
+        # ── OpenAI-compatible API routes (handler, payload only) ──
+        if path == "/v1/chat/completions":
+            return _handle_v1_chat_completions(self, payload)
+        if path == "/v1/completions":
+            return _handle_v1_completions(self, payload)
+
+        dispatch = {
+            "/__log": lambda ip, p: _handle_post_log(self, ip, p),
+            "/__ack": lambda ip, p: _handle_post_ack(self, ip, p),
+            "/__anomaly": lambda ip, p: _handle_post_anomaly(self, ip, p),
+            "/__chat": self._post_chat,
+            "/__chat-stream": lambda ip, p: _handle_post_chat_stream(self, ip, p),
+            "/__chat-clear": lambda ip, p: _handle_post_chat_clear(self, ip, p),
+            "/__admin/set-model": self._post_set_model,
+            "/__admin/download-model": self._post_download_model,
+            "/__handover": self._post_handover,
+            "/__swarm/arena": lambda ip, p: _handle_swarm_post(self, "arena", p),
+            "/__swarm/benchmark": lambda ip, p: _handle_swarm_post(self, "benchmark", p),
+            "/__swarm/inference": lambda ip, p: _handle_swarm_post(self, "inference", p),
+            "/__swarm/evaluate": lambda ip, p: _handle_swarm_post(self, "evaluate", p),
+            "/__swarm/marathon-round": lambda ip, p: _handle_swarm_post(self, "marathon-round", p),
+            "/__swarm/diagnose": lambda ip, p: _handle_swarm_post(self, "diagnose", p),
+            "/__swarm/pool/preload": lambda ip, p: _handle_swarm_post(self, "pool-preload", p),
+            "/__swarm/pool/drain": lambda ip, p: _handle_swarm_post(self, "pool-drain", p),
+            "/__swarm/recommendations": lambda ip, p: _handle_swarm_post(self, "recommendations", p),
+        }
+        handler = dispatch.get(path)
+        if handler:
+            handler(ip, payload)
+        else:
+            self._send_json(404, {"error": "endpoint not found"})
+
+    # ── POST endpoint handlers ─────────────────────────────────────────────
+
+    def _post_chat(self, ip, payload):
+        """Non-streaming chat with multi-turn memory and retry."""
+        message = str(payload.get("message", "")).strip()[:MAX_MESSAGE_LEN]
+        badge = str(payload.get("badge", ""))[:MAX_BADGE_LEN]
+        lang = str(payload.get("lang", "en"))[:MAX_LANG_LEN]
+        if not message:
+            self._send_json(400, {"error": "empty message"})
+            return
+
+        db_insert_action(ip, badge, "chatSend", {"message": message[:LOG_PREVIEW_LEN]}, now_ts())
+
+        engine, err = get_llm_engine(blocking=False)
+        if err or engine is None:
+            self._send_json(
+                503, {"error": f"AI engine unavailable: {err or 'not loaded'}"}
+            )
+            return
+
+        # Admission control via request buffer
+        if not _admit_request(f"chat:{badge or ip}", client_ip=ip):
+            self._send_json(503, {"error": "Server busy \u2014 try again shortly"})
+            return
+
+        _LANG_NAMES = {
+            "en": "English",
+            "ro": "Romanian",
+            "hu": "Hungarian",
+            "de": "German",
+            "fr": "French",
+        }
+        _reply_lang = _LANG_NAMES.get(lang, "English")
+        SYSTEM = (
+            "You are ZenAI, a smart assistant embedded in ZenAIos — a hospital operations dashboard. "
+            "Answer the user's question directly and accurately. "
+            "If the question is about hospital operations, clinical data, triage, or patient flow, "
+            "give a concise (2–5 sentences) actionable answer and remind the user to verify clinical "
+            "data in the official EMR system. "
+            "For all other questions (general knowledge, calculations, language, images, etc.), "
+            "just answer normally without forcing a medical angle. "
+            f"IMPORTANT: Always reply in {_reply_lang}, regardless of the language you were trained in."
+        )
+
+        # Build multi-turn messages
+        history = _get_conversation(badge or ip)
+        _append_conversation(badge or ip, "user", message)
+
+        async def _collect_reply():
+            parts = []
+            async for chunk in _query_with_retry(
+                engine,
+                message=message,
+                system_prompt=SYSTEM,
+                temperature=CHAT_TEMPERATURE,
+                top_p=CHAT_TOP_P,
+                max_tokens=CHAT_MAX_TOKENS,
+                repeat_penalty=CHAT_REPEAT_PENALTY,
+                stream=True,
+                messages=[{"role": "system", "content": SYSTEM}]
+                + history
+                + [{"role": "user", "content": message}],
+            ):
+                parts.append(chunk)
+            return "".join(parts)
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(_collect_reply(), _get_llm_loop())
+            reply = future.result(timeout=INFERENCE_TIMEOUT)
+        except Exception as exc:
+            reply = f"❌ Inference error: {exc}"
+
+        _append_conversation(badge or ip, "assistant", reply)
+        db_insert_action(ip, badge, "chatReply", {"reply": reply[:LOG_PREVIEW_LEN]}, now_ts())
+        self._send_json(200, {"reply": reply})
+
+        _release_request(client_ip=ip)
+
     def _post_handover(self, ip, payload):
-        badge = str(payload.get("badge", ""))[:64]
+        badge = str(payload.get("badge", ""))[:MAX_BADGE_LEN]
         cutoff = now_ts() - 28800  # last 8 hours
         try:
             conn = sqlite3.connect(DB_PATH)
@@ -2820,7 +2953,7 @@ class ZenHandler(http.server.SimpleHTTPRequestHandler):
         if "/__admin" in path or "favicon" in path or "NOT_FOUND" in path:
             return
         ip = self.client_address[0]
-        print(f"  [{now_str()}] {ip:>15}  {path}")
+        logger.info("%s  %s", ip, path)
 
 
 # ─── Resilient TCP server ──────────────────────────────────────────────────────
@@ -2869,7 +3002,7 @@ if __name__ == "__main__":
     print(f"  ╔{_bar}╗")
     print(f"  ║{_title:<{_W - 1}}║")  # -1 compensates for emoji extra column
     print(f"  ╠{_bar}╣")
-    print(_row(f"  App      →  http://localhost:{PORT}/login.html"))
+    print(_row(f"  App      →  http://localhost:{PORT}/index.html"))
     print(_row(f"  LAN      →  http://{LOCAL_IP}:{PORT}"))
     print(_row(f"  Admin    →  http://localhost:{PORT}/__admin"))
     print(_row(f"  DB Stats →  http://localhost:{PORT}/__admin/db-stats"))
@@ -2887,5 +3020,5 @@ if __name__ == "__main__":
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\n  Server stopped.")
+            logger.info("Server stopped.")
             httpd.server_close()

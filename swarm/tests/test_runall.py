@@ -10,7 +10,8 @@ import urllib.error
 import traceback
 import socket
 
-BASE = "http://localhost:8787"
+import os as _os
+BASE = _os.environ.get("TEST_BASE_URL", "http://localhost:8777")
 CATEGORIES = ["reasoning", "coding", "creative", "knowledge", "math"]
 
 def api(method, path, body=None):

@@ -142,7 +142,6 @@ describe('ChatBot.generateReply — Voice & Fallback', function () {
         assert.typeOf(r, 'string');
         assert.ok(r.length > 0);
     });
-});
 
     it('fallback response is one of the 4 known fallback strings', function (assert) {
         var knownFragments = [
@@ -153,11 +152,12 @@ describe('ChatBot.generateReply — Voice & Fallback', function () {
         ];
         // Run 20 times to hit different random picks
         for (var i = 0; i < 20; i++) {
-            var r = gr('zzz unknown zzz ' + i);
+            var r = _gr()('zzz unknown zzz ' + i);
             var matched = knownFragments.some(function (f) { return r.includes(f); });
             assert.ok(matched, 'fallback[' + i + '] matched known fragment');
         }
     });
+});
 
     // ── Return type ───────────────────────────────────────────────────────────
 

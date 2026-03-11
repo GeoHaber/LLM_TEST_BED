@@ -33,6 +33,20 @@ venv/
 *.swp
 *.swo
 
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Patches (generated)
+patches/
+
+# Node
+node_modules/
+
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# SQLite databases (local session data)
+*.db

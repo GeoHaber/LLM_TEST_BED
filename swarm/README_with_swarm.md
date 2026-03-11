@@ -132,10 +132,10 @@ or double-click **`Run_me.bat`** on Windows — it opens the app and admin panel
 
 | URL | What it is |
 |-----|------------|
-| `http://localhost:8787/login.html` | The app |
-| `http://localhost:8787/__admin` | Live activity monitor |
-| `http://localhost:8787/__admin/db-stats` | DB summary as JSON |
-| `http://localhost:8787/__admin/actions` | Recent user actions as JSON |
+| `http://localhost:8777/index.html` | The app |
+| `http://localhost:8777/__admin` | Live activity monitor |
+| `http://localhost:8777/__admin/db-stats` | DB summary as JSON |
+| `http://localhost:8777/__admin/actions` | Recent user actions as JSON |
 
 ### With plain Python (no tracking)
 
@@ -252,10 +252,10 @@ JOIN sessions s ON s.ip = h.ip
 WHERE s.device='iPhone' GROUP BY h.path ORDER BY n DESC;
 ```
 
-**DB summary endpoint (JSON):** `http://localhost:8787/__admin/db-stats`  
+**DB summary endpoint (JSON):** `http://localhost:8777/__admin/db-stats`  
 Returns: top pages, top clients, hits per day — ready to feed into an LLM query interface.
 
-**User actions endpoint (JSON):** `http://localhost:8787/__admin/actions`  
+**User actions endpoint (JSON):** `http://localhost:8777/__admin/actions`  
 Returns last 200 in-app actions — view switches, chat sends, alert acks — with badge and timestamp.
 
 > `zenai_activity.db` is gitignored and never committed — your session data stays local.

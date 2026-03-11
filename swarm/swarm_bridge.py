@@ -14,16 +14,12 @@ import threading
 import time
 from pathlib import Path
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-_LLM_ROOT = os.environ.get(
-    "LOCAL_LLM_PATH", os.path.normpath(os.path.join(ROOT, "..", "Local_LLM"))
-)
+import zen_config as _paths  # single source of truth for all directories
+
+_LLM_ROOT = _paths.LOCAL_LLM_DIR
 
 # ── Ensure Local_LLM is importable ──────────────────────────────────────────
 _import_error: str | None = None
-
-if os.path.isdir(_LLM_ROOT) and _LLM_ROOT not in sys.path:
-    sys.path.insert(0, _LLM_ROOT)
 
 try:
     from Core.swarm.state import (  # type: ignore[import-not-found]
@@ -127,6 +123,8 @@ def status() -> dict:
     """Return bridge availability and configuration."""
     return {
         "available": available(),
+        "bridge": available(),
+        "engine": "llama-cpp-python" if available() else None,
         "llm_root": _LLM_ROOT,
         "error": _import_error,
         "has_eval": _HAS_EVAL,
@@ -138,12 +136,25 @@ def status() -> dict:
 
 # ── Models ──────────────────────────────────────────────────────────────────
 
+_models_cache: list[dict] | None = None
+_models_lock = threading.Lock()
 
-def list_models() -> list[dict]:
-    """Discover GGUF models using Local_LLM's scanner."""
+
+def list_models(*, refresh: bool = False) -> list[dict]:
+    """Discover GGUF models using Local_LLM's scanner (cached after first call).
+
+    Pass refresh=True to force re-scan (e.g. after downloading a new model).
+    """
+    global _models_cache
     if not available():
         return []
-    return discover_models()
+    if _models_cache is not None and not refresh:
+        return _models_cache
+    with _models_lock:
+        if _models_cache is not None and not refresh:
+            return _models_cache
+        _models_cache = discover_models()
+    return _models_cache
 
 
 # ── Prompts ─────────────────────────────────────────────────────────────────
