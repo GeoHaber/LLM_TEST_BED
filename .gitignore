@@ -1,52 +1,40 @@
-# Binaries
-bin/
-*.dll
-*.exe
-*.so
-*.dylib
-
-# Models (too large for git)
-*.gguf
-Models/
-
-# Logs & temp
-*.log
-stderr.txt
-stdout.txt
-__out.txt
-server_err.txt
-server_out.txt
-
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
+*.pyd
+.Python
 *.egg-info/
 dist/
 build/
+.eggs/
+*.egg
+
+# Virtual environments
 .venv/
 venv/
+env/
 
-# IDE
-.vscode/
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Ruff / linters
+.ruff_cache/
+.mypy_cache/
+
+# Editor
+.vscode/settings.json
 .idea/
-*.swp
-*.swo
-
-# Rust build artifacts
-target/
-Cargo.lock
-
-# Patches (generated)
-patches/
-
-# Node
-node_modules/
+*.sublime-workspace
 
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# SQLite databases (local session data)
-*.db
+# Project-specific — never commit model files or secrets
+*.gguf
+.env
+xray_report.json
