@@ -1,8 +1,10 @@
 """Patch model_comparator.html – rewrite MODEL_CATALOG + fix card footer stats."""
 
+import os
 import sys
+from pathlib import Path
 
-HTML = r"C:\Users\dvdze\Documents\GitHub\GeorgeHaber\Swarm\model_comparator.html"
+HTML = str(Path(__file__).resolve().parent / "model_comparator.html")
 
 NEW_CATALOG = r"""const _MODEL_CATALOG = [
   // == Llama (Meta) ===========================================================

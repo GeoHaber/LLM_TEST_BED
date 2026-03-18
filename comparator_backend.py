@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -748,7 +749,14 @@ def _is_safe_model_path(path: str, model_dirs: list[str]) -> bool:
 class ComparatorHandler(BaseHTTPRequestHandler):
     """HTTP request handler for model comparator endpoints."""
 
-    model_dirs = ["C:\\AI\\Models", "C:\\Users\\Public\\AI\\Models"]
+    # Model directories: env var > home-based > project-local
+    model_dirs = [
+        d for d in [
+            os.environ.get("ZENAI_MODEL_DIR", ""),
+            str(Path.home() / "AI" / "Models"),
+            str(Path(__file__).resolve().parent / "models"),
+        ] if d and Path(d).is_dir()
+    ] or [str(Path.home() / "AI" / "Models")]
 
     # ── CORS preflight ────────────────────────────────────────────────────────
     def do_OPTIONS(self) -> None:
@@ -916,7 +924,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         import uuid
 
         model = data.get("model", "").strip()
-        dest = data.get("dest", "C:\\AI\\Models")
+        dest = data.get("dest", str(Path.home() / "AI" / "Models"))
 
         if not model:
             self._send_json(400, {"ok": False, "error": "model is required"})
