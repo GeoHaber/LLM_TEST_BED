@@ -1604,6 +1604,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         body = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
         self._cors_headers()
         self.end_headers()
         self.wfile.write(body)

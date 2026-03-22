@@ -3501,7 +3501,9 @@ function _pollInstallJob() {
 }
 
 // ─── Init ─────────────────────────────────────────────────────
-window.addEventListener('load', () => {
+// DOMContentLoaded fires after HTML is parsed — no need to wait for
+// external CDN resources (Tailwind, Google Fonts) to complete.
+document.addEventListener('DOMContentLoaded', () => {
   loadOnlineKeys();
   updateOnlineModelsGrid();
   checkSystemStatus();
