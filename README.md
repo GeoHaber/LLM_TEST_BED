@@ -17,8 +17,8 @@ Send any prompt to 1–8 models at once, score every response with a configurabl
 
 - **Side-by-side inference** — up to 8 local GGUF models run in parallel threads
 - **LLM-as-judge scoring** — a separate local model grades every response on accuracy, reasoning, instruction-following, and safety (0–10)
-- **5 judge templates** — Medical Triage · Clinical Decision · Research · Code Review · Creative Writing
-- **100+ question bank** — categorised test prompts (emergency, cardiology, coding, reasoning, multilingual)
+- **5 judge templates** — Medical/Clinical · General Assistant · Code Quality · Reasoning/Math · Multilingual
+- **32 question bank** — categorised test prompts across 6 categories (ops, emergency, cardiology, coding, reasoning, multilingual)
 - **Live performance metrics** — TTFT, tokens/s, RAM delta, total time
 - **Monkey Mode 🐒** — randomised model + prompt + judge for unattended regression runs
 - **Zena AI assistant** — built-in chat powered by any of your local models
@@ -109,13 +109,13 @@ comparator_backend.py  :8123
 
 ## 📊 Judge Templates
 
-| Template | Best for |
-|----------|----------|
-| Medical Triage | Emergency / urgent care |
-| Clinical Decision | Differential diagnosis, treatment planning |
-| Research Analysis | Literature review, evidence grading |
-| Code Review | Programming, debugging, algorithms |
-| Creative Writing | Open-ended narrative and language quality |
+| Template | Value | Best for |
+|----------|-------|----------|
+| Medical / Clinical | `medical` | Emergency care, triage, clinical decisions |
+| General Assistant | `general` | General-purpose Q&A, instruction following |
+| Code Quality | `coding` | Programming, debugging, code review |
+| Reasoning / Math | `reasoning` | Logic, math, multi-step reasoning |
+| Multilingual Quality | `multilingual` | Translation, cross-language prompts |
 
 All templates output a unified JSON schema: `overall · accuracy · reasoning · instruction · safety · explanation`
 
@@ -127,10 +127,13 @@ All templates output a unified JSON schema: `overall · accuracy · reasoning ·
 |---|---|
 | `model_comparator.html` | Complete single-file SPA — UI, CSS, JS |
 | `comparator_backend.py` | Python HTTP API — hardware scan, inference, judge, downloads |
+| `_patch_catalog.py` | Utility: update MODEL_CATALOG in HTML |
 | `requirements.txt` | Python dependencies |
 | `Run_me.bat` | One-click Windows launcher |
 | `HOW_TO_USE.md` | Full user guide (also used as Zena's system prompt) |
-| `zena_256x256.png` | Zena avatar |
+| `LLM_COMPARE_2026.md` | Landscape analysis / competitive research |
+| `Enhance_plan.md` | Enhancement roadmap with cost/benefit analysis |
+| `Rebuild_Prompt.md` | Step-by-step rebuild prompt for LLMs |
 
 ---
 
@@ -147,7 +150,16 @@ All templates output a unified JSON schema: `overall · accuracy · reasoning ·
 ## 🧪 Tests
 
 ```bash
-pytest tests/
+# Run all 300 tests (~14 seconds)
+pytest tests/ -v --tb=short
+
+# Individual suites
+pytest tests/test_bug_fixes.py -v           # 103 tests
+pytest tests/test_xray_comprehensive.py -v  # 119 tests
+pytest tests/test_completeness_audit.py -v  #  78 tests
+
+# Live inference test (requires GGUF model)
+python tests/test_llm_integration.py
 ```
 
 Open `tests/test_comparator.html` in a browser for the JS unit test suite.

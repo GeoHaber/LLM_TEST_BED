@@ -13,6 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Chat bar "Ask Zena" with `/__chat` endpoint and HOW_TO_USE.md system prompt
 - `/__download-status` and `/__install` endpoints for model management
 - BitNet / incompatible quantization formats (i2_s, i1, i2, i3) skipped at scan time
+- `test_completeness_audit.py` — 78 spec-vs-implementation validation tests (total: 300 tests)
 
 ### Fixed
 - Backend default port changed 8787 → 8123 (was silently refusing all UI requests)

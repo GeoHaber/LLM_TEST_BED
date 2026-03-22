@@ -92,28 +92,28 @@ Each template focuses on different scoring criteria. All output a unified JSON s
 }
 ```
 
-| Template | Best for |
-|----------|----------|
-| **Medical Triage** | Emergency / urgent care prompts |
-| **Clinical Decision Support** | Differential diagnosis, treatment planning |
-| **Research Analysis** | Literature review, evidence grading |
-| **Code Review** | Programming, debugging, algorithm questions |
-| **Creative Writing** | Open-ended, narrative, language quality |
+| Template | Value | Best for |
+|----------|-------|----------|
+| **🏥 Medical / Clinical** | `medical` | Emergency care, triage, clinical decision prompts |
+| **💬 General Assistant** | `general` | General-purpose Q&A, instruction following |
+| **💻 Code Quality** | `coding` | Programming, debugging, code review |
+| **🧠 Reasoning / Math** | `reasoning` | Logic, math, multi-step reasoning |
+| **🌍 Multilingual Quality** | `multilingual` | Translation, cross-language prompts |
 
 ---
 
 ## Question Bank
 
-The Question Bank (📚 chip row below the prompt box) contains 100+ categorised test prompts:
+The Question Bank (📚 chip row below the prompt box) contains 32 categorised test prompts:
 
-| Category | Examples |
-|----------|---------|
-| **Emergency** | Chest pain triage, sepsis protocol, trauma assessment |
-| **Ops** | Medication reconciliation, discharge planning |
-| **Cardiology** | ACS workup, arrhythmia management |
-| **Coding** | Python debugging, algorithm design, SQL optimisation |
-| **Reasoning** | Logic puzzles, multi-step inference |
-| **Multilingual** | Prompts in Hebrew, Arabic, Spanish, French, German |
+| Category | Count | Examples |
+|----------|-------|---------|
+| **Ops** | 5 | Hospital occupancy, free beds, triage summary |
+| **Emergency** | 6 | Chest pain triage, sepsis-3/qSOFA, anaphylaxis protocol |
+| **Cardiology** | 5 | ACS workup, warfarin management, CPR algorithm |
+| **Coding** | 6 | Python binary search, SQL duplicates, REST API design |
+| **Reasoning** | 5 | Bat-and-ball, logic puzzles, multi-step inference |
+| **Multilingual** | 5 | Prompts in Romanian, German, Hungarian, French |
 
 Click any chip to instantly load that prompt into the text box.
 
@@ -198,33 +198,104 @@ Zena is the built-in AI assistant (this app itself).
 
 ## API Reference (for LLMs)
 
-All endpoints accept/return JSON. CORS is open (`*`).
+All endpoints accept/return JSON. CORS is restricted to `localhost` origins only (127.0.0.1 and localhost, any port). External origins are blocked.
+
+### `GET /__health`
+Returns server status.
+
+```json
+{ "ok": true, "ts": 1711123456.789 }
+```
 
 ### `GET /__system-info`
-Returns detected models, system RAM, GPU info.
+Returns detected models, system RAM, GPU info, and build recommendations.
 
 ```json
 {
-  "models": [{"name": "mistral-7b.gguf", "path": "C:\\AI\\Models\\mistral-7b.gguf", "size_mb": 4096}],
-  "ram_total_mb": 32000,
-  "ram_free_mb": 18000,
-  "gpu": "NVIDIA RTX 3090"
+  "cpu_brand": "AMD",
+  "cpu_count": 8,
+  "cpu_name": "AMD Ryzen 7 8845HS",
+  "cpu_avx2": true,
+  "cpu_avx512": false,
+  "memory_gb": 31.3,
+  "gpus": [{"name": "AMD Radeon 890M", "vendor": "AMD", "vram_gb": 8.0, "backend": "ROCm/Vulkan"}],
+  "has_llama_cpp": true,
+  "llama_cpp_version": "0.3.16",
+  "recommended_build": {"build": "ROCm / Vulkan (AMD GPU)", "flag": "rocm", "pip": "...", "reason": "...", "note": "..."},
+  "model_count": 5,
+  "models": [{"name": "Llama-3.2-3B-Instruct-Q4_K_M.gguf", "path": "C:\\AI\\Models\\...", "size_gb": 1.9}],
+  "timestamp": 1711123456.789
 }
 ```
 
 ### `POST /__comparison/mixed`
-Runs a full benchmark comparison.
+Runs a full benchmark comparison. Returns ranked results with optional judge scores.
 
 ```json
 {
-  "models": ["C:\\AI\\Models\\model-a.gguf", "C:\\AI\\Models\\model-b.gguf"],
   "prompt": "Explain the Ottawa Ankle Rules.",
+  "system_prompt": "You are a helpful medical assistant.",
+  "local_models": ["C:\\AI\\Models\\model-a.gguf", "C:\\AI\\Models\\model-b.gguf"],
+  "online_models": [],
   "judge_model": "C:\\AI\\Models\\judge.gguf",
-  "judge_template": "medical_triage",
+  "judge_system_prompt": "Rate the response 0-10...",
   "max_tokens": 512,
-  "temperature": 0.7
+  "temperature": 0.7,
+  "n_ctx": 4096,
+  "top_p": 0.95,
+  "repeat_penalty": 1.1,
+  "inference_timeout": 300
 }
 ```
+
+Response:
+```json
+{
+  "prompt": "...",
+  "models_tested": 2,
+  "responses": [
+    {
+      "model": "model-a",
+      "model_path": "C:\\AI\\Models\\model-a.gguf",
+      "response": "The Ottawa Ankle Rules...",
+      "time_ms": 1234.5,
+      "tokens": 87,
+      "tokens_per_sec": 12.3,
+      "ttft_ms": 456.7,
+      "ram_delta_mb": 1200,
+      "judge_score": 8.5,
+      "quality_score": 8.5,
+      "judge_detail": {"overall": 8.5, "accuracy": 8, "reasoning": 9, "bias_passes": 2}
+    }
+  ],
+  "judge_model": "judge.gguf",
+  "timestamp": 1711123456.789
+}
+```
+
+### `POST /__comparison/stream`
+SSE streaming version of comparison. Returns `text/event-stream` with events:
+- `model_start` — model loading begins
+- `token` — each generated token streamed individually
+- `model_done` — model finished generating
+- `judge_start` / `judge_done` — judge scoring phase
+- `done` — all complete
+
+### `GET /__config`
+Returns server configuration constants.
+
+```json
+{
+  "vk_devices": "0",
+  "default_inference_timeout": 300,
+  "max_inference_timeout": 1800,
+  "max_prompt_tokens": 8192,
+  "rate_limit": {"max_requests": 30, "window_sec": 60.0}
+}
+```
+
+### `GET /__discover-models?q=llama&sort=trending&limit=30`
+Searches HuggingFace for GGUF models. Cached for 15 minutes.
 
 ### `POST /__chat`
 Single-turn or multi-turn chat with a local model.
@@ -247,8 +318,15 @@ Response:
 ```
 
 ### `POST /__download-model`
+Start a background download. Returns a `job_id` immediately; poll `/__download-status?job_id=<id>` for progress.
+
 ```json
-{ "url": "https://huggingface.co/.../model.gguf", "dest_dir": "C:\\AI\\Models" }
+{ "model": "https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_M.gguf", "dest": "C:\\AI\\Models" }
+```
+
+Response:
+```json
+{ "ok": true, "job_id": "a1b2c3d4" }
 ```
 
 ### `POST /__install-llama`
@@ -272,7 +350,7 @@ Triggers `pip install llama-cpp-python` with GPU flags. Poll `/__install-status`
 ## Tips for LLMs Using This App
 
 - To test the app: `POST /__comparison/mixed` with 2 models and a short prompt.
-- Judge template names: `medical_triage`, `clinical_decision`, `research_analysis`, `code_review`, `creative_writing`.
+- Judge template names: `medical`, `general`, `coding`, `reasoning`, `multilingual`.
 - All file paths must use the **server's** filesystem path (e.g., `C:\AI\Models\...`).
 - The `messages` array in `/__chat` follows the OpenAI chat format (`role`: `user`/`assistant`/`system`).
 - Token counts and RAM figures are approximate; `llama_cpp` reports them per-run.

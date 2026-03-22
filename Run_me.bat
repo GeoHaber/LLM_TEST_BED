@@ -17,5 +17,11 @@ start http://127.0.0.1:8123/
 
 echo.
 echo Backend running at http://127.0.0.1:8123
-echo Close this window to stop.
-pause
+echo Press any key to stop the backend and clean up...
+pause >nul
+
+echo Shutting down backend...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8123 "') do (
+    taskkill /PID %%a /F >nul 2>&1
+)
+echo Done.
