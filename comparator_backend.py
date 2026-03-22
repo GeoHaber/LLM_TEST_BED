@@ -827,6 +827,8 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         else:
             # Serve static assets (images, icons) from the same directory
             _STATIC_TYPES = {
+                ".js": "application/javascript",
+                ".css": "text/css",
                 ".png": "image/png",
                 ".jpg": "image/jpeg",
                 ".jpeg": "image/jpeg",
