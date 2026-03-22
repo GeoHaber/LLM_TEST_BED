@@ -784,9 +784,12 @@ class ComparatorHandler(BaseHTTPRequestHandler):
 
     # ── CORS preflight ────────────────────────────────────────────────────────
     def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        self._cors_headers()
-        self.end_headers()
+        try:
+            self.send_response(204)
+            self._cors_headers()
+            self.end_headers()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+            pass
 
     def do_GET(self) -> None:
         if self.path == "/__system-info":
@@ -824,6 +827,8 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
             except FileNotFoundError:
                 self._send_json(404, {"error": "model_comparator.html not found"})
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+                pass
         else:
             # Serve static assets (images, icons) from the same directory
             _STATIC_TYPES = {
@@ -855,6 +860,8 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                     self.wfile.write(body)
                 except FileNotFoundError:
                     self._send_json(404, {"error": "Static asset not found"})
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+                    pass
             else:
                 self._send_json(404, {"error": "Not found"})
 
@@ -1080,9 +1087,12 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             def _sse(event: str, payload: dict) -> None:
-                line = f"event: {event}\ndata: {json.dumps(payload)}\n\n"
-                self.wfile.write(line.encode("utf-8"))
-                self.wfile.flush()
+                try:
+                    line = f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+                    self.wfile.write(line.encode("utf-8"))
+                    self.wfile.flush()
+                except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+                    pass
 
             # Stream model inference one-by-one
             try:
@@ -1603,16 +1613,22 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _send_json(self, status: int, data: Any) -> None:
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Cache-Control", "no-store")
-        self._cors_headers()
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            body = json.dumps(data).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self._cors_headers()
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+            pass  # Client disconnected before response was sent
 
     def log_message(self, format, *args):
-        print(f"[{self.log_date_time_string()}] {format % args}")
+        msg = format % args
+        if any(k in msg for k in ("ConnectionAbortedError", "BrokenPipeError", "ConnectionResetError")):
+            return  # Silently ignore client-disconnect noise
+        print(f"[{self.log_date_time_string()}] {msg}")
 
 
 def _run_download(job_id: str, model: str, dest: str) -> None:

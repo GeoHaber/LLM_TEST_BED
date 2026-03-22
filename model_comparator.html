@@ -845,7 +845,6 @@ body { font-family: 'Inter', sans-serif; }
           <button onclick="switchRepo('hf',this)" class="repo-tab-btn active-tab px-3 py-1 rounded text-[11px] font-bold border border-primary bg-primary/10 text-primary">🤗 HuggingFace</button>
           <button onclick="switchRepo('discover',this)" class="repo-tab-btn px-3 py-1 rounded text-[11px] font-bold border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-primary hover:text-primary">🔍 Discover</button>
           <button onclick="switchRepo('ms',this)" class="repo-tab-btn px-3 py-1 rounded text-[11px] font-bold border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-primary hover:text-primary">🌐 ModelScope</button>
-          <button onclick="switchRepo('gh',this)" class="repo-tab-btn px-3 py-1 rounded text-[11px] font-bold border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-primary hover:text-primary">📦 GitHub</button>
         </div>
       </div>
 
@@ -871,7 +870,7 @@ body { font-family: 'Inter', sans-serif; }
         </div>
         <!-- Card grid -->
         <div class="catalog-grid" id="catalogGrid">
-          <div class="col-span-2 text-center py-6 text-slate-400 text-sm">Loading catalog…</div>
+          <div class="col-span-2 flex items-center justify-center gap-3 py-8 text-slate-400 text-sm"><div class="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div><span>Loading catalog…</span></div>
         </div>
         <!-- Custom HF path -->
         <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
@@ -897,7 +896,7 @@ body { font-family: 'Inter', sans-serif; }
           <button onclick="runDiscoverSearch()" class="px-3 py-1.5 text-[11px] font-bold rounded bg-primary text-white hover:bg-primary/90">Search</button>
         </div>
         <div id="discoverGrid" class="catalog-grid">
-          <div class="col-span-2 text-center py-6 text-slate-400 text-sm">🔥 Loading trending GGUF models…</div>
+          <div class="col-span-2 flex items-center justify-center gap-3 py-8 text-slate-400 text-sm"><div class="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div><span>Loading trending GGUF models…</span></div>
         </div>
         <p class="mt-2 text-[10px] text-slate-400">Results from HuggingFace API · cached 15 min · ⭐ = trusted quantizer</p>
       </div>
@@ -905,12 +904,6 @@ body { font-family: 'Inter', sans-serif; }
       <!-- ModelScope section -->
       <div id="repo-ms" class="repo-section hidden">
         <input id="msModel" type="text" placeholder="baichuan-inc/Baichuan2-7B"
-          class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[12px] px-3 py-2 focus:ring-1 focus:ring-primary outline-none dark:text-slate-200"/>
-      </div>
-
-      <!-- GitHub section -->
-      <div id="repo-gh" class="repo-section hidden">
-        <input id="ghModel" type="text" placeholder="https://github.com/user/repo/releases/download/v1/model.gguf"
           class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[12px] px-3 py-2 focus:ring-1 focus:ring-primary outline-none dark:text-slate-200"/>
       </div>
     </div>
@@ -2703,7 +2696,7 @@ async function runDiscoverSearch() {
   const sort  = document.getElementById('discoverSort')?.value || 'trending';
 
   _discoverLoading = true;
-  grid.innerHTML = '<div class="col-span-2 text-center py-6 text-slate-400 text-sm"><span class="animate-pulse">🔍 Searching HuggingFace…</span></div>';
+  grid.innerHTML = '<div class="col-span-2 flex items-center justify-center gap-3 py-8 text-slate-400 text-sm"><div class="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div><span>Searching HuggingFace for GGUF models\u2026</span></div>';
 
   try {
     const params = new URLSearchParams({q: query, sort, limit: '30'});
@@ -2990,7 +2983,7 @@ function startDownload() {
 
 function _executeDownload(modelPath, isOverwrite) {
   const btn = document.getElementById('startDlBtn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Starting…'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></div> Starting…'; }
   fetch(`${BACKEND}/__download-model`, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ model: modelPath, dest: _destPath, overwrite: isOverwrite })
