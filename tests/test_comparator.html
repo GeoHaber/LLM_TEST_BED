@@ -474,6 +474,93 @@
         });
       });
 
+      // ── Catalog / discovery cards ───────────────────────────────────────
+      describe('Catalog and discovery cards', function () {
+        beforeEach(function () {
+          W.scannedModels = [
+            { name: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf', path: 'C:\\AI\\Models\\Llama-3.2-3B-Instruct-Q4_K_M.gguf', size_gb: 1.9 }
+          ];
+          W._systemRam = 32;
+          W._systemVram = 8;
+          W.openDownloadModal();
+        });
+
+        afterEach(function () {
+          W.closeDownloadModal();
+          W._selectedCatalogModel = null;
+          const custom = D.getElementById('hfCustom');
+          if (custom) custom.value = '';
+          W.updateSelectedDisplay();
+        });
+
+        it('renderCatalog shows family, quant, and context details on cards', function () {
+          W.renderCatalog();
+          const firstCard = D.querySelector('#catalogGrid .mcard');
+          expect(firstCard).to.not.be.null;
+          expect(firstCard.textContent).to.include('Llama');
+          expect(firstCard.textContent).to.match(/Q4_K_M|FP16/);
+          expect(firstCard.textContent).to.match(/ctx/);
+        });
+
+        it('renderCatalog shows source owner and preset summary', function () {
+          W.renderCatalog();
+          const firstCard = D.querySelector('#catalogGrid .mcard');
+          expect(firstCard.textContent).to.include('Source:');
+          expect(firstCard.textContent).to.match(/temp\s+0\.|tok/);
+        });
+
+        it('renderCatalog marks owned models when a matching GGUF exists locally', function () {
+          W.renderCatalog();
+          expect(D.getElementById('catalogGrid').textContent).to.include('Owned');
+        });
+
+        it('selectCatalogCard updates selected display with source and preset info', function () {
+          W.selectCatalogCard('llama32-3b');
+          const summary = D.getElementById('selectedModelDisplay').textContent;
+          expect(summary).to.include('Llama 3.2 3B Instruct');
+          expect(summary).to.include('bartowski');
+          expect(summary).to.match(/temp\s+0\.|tok/);
+        });
+
+        it('renderDiscoverResults shows owner and click hint', function () {
+          W.renderDiscoverResults([
+            {
+              id: 'bartowski/Llama-3.2-3B-Instruct-GGUF',
+              author: 'bartowski',
+              trusted: true,
+              downloads: 123456,
+              likes: 321,
+              lastModified: '2026-03-20T00:00:00Z',
+              tags: ['gguf', 'chat', 'reasoning'],
+              pipeline: 'text-generation'
+            }
+          ]);
+          const card = D.querySelector('#discoverGrid .mcard');
+          expect(card).to.not.be.null;
+          expect(card.textContent).to.include('Owner:');
+          expect(card.textContent).to.include('bartowski');
+          expect(card.textContent).to.include('Click to stage this repo for download');
+        });
+
+        it('clicking a discover card copies repo id into hfCustom', function () {
+          W.renderDiscoverResults([
+            {
+              id: 'bartowski/Llama-3.2-3B-Instruct-GGUF',
+              author: 'bartowski',
+              trusted: true,
+              downloads: 123456,
+              likes: 321,
+              lastModified: '2026-03-20T00:00:00Z',
+              tags: ['gguf'],
+              pipeline: 'text-generation'
+            }
+          ]);
+          const card = D.querySelector('#discoverGrid .mcard');
+          card.click();
+          expect(D.getElementById('hfCustom').value).to.equal('bartowski/Llama-3.2-3B-Instruct-GGUF');
+        });
+      });
+
       // ── clearAll ───────────────────────────────────────────────────────────
       describe('clearAll', function () {
         it('clears #prompt textarea', function () {

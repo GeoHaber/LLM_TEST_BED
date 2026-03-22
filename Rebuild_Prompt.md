@@ -36,12 +36,13 @@ LLM_TEST_BED/
 ├── CHANGELOG.md                 # Release notes
 ├── LICENSE                      # MIT License
 └── tests/
-    ├── conftest.py              # Shared fixtures (app module import)
-    ├── test_bug_fixes.py        # 103 unit tests
+    ├── conftest.py                 # Shared fixtures (app module import + rate limiter reset)
+    ├── test_bug_fixes.py           # 100 unit tests
     ├── test_completeness_audit.py  # 78 spec-vs-implementation tests
+    ├── test_discovery_install.py   # 85 discovery / install / hardware tests
     ├── test_xray_comprehensive.py  # 119 functional tests
-    ├── test_llm_integration.py   # Live inference integration test
-    └── test_comparator.html      # Browser Mocha test suite
+    ├── test_llm_integration.py     # Live inference integration test
+    └── test_comparator.html        # Browser Mocha test suite
 ```
 
 **Important:** There are exactly **two source files** (backend + frontend). No
@@ -514,7 +515,19 @@ Test classes to include:
 
 Full-coverage validation of every feature. See test file for details.
 
-### 9.3 `tests/test_llm_integration.py` — Live inference test
+### 9.3 `tests/test_completeness_audit.py` — 78 spec-vs-implementation tests
+
+Confirms the documented feature set is actually present across the backend and UI.
+
+### 9.4 `tests/test_discovery_install.py` — 85 discovery / install / hardware tests
+
+Covers:
+1. Hugging Face GGUF discovery and caching
+2. CPU/GPU detection and llama.cpp build recommendation
+3. `__install-llama` and `__download-status` endpoint validation
+4. Local model scanning and model-card data completeness
+
+### 9.5 `tests/test_llm_integration.py` — Live inference test
 
 Requires an actual GGUF model on disk. Tests:
 1. Unit functions (system info, model scanning, token counting)
@@ -530,10 +543,10 @@ Run separately: `python tests/test_llm_integration.py`
 ### Build Commands
 
 ```bash
-# Run all fast tests (no GPU/model needed)
-python -m pytest tests/test_bug_fixes.py tests/test_xray_comprehensive.py -v
+# Run the main fast suites (no model weights needed)
+python -m pytest tests/test_bug_fixes.py tests/test_xray_comprehensive.py tests/test_completeness_audit.py tests/test_discovery_install.py -v
 
-# Run with coverage
+# Run the full Python suite
 python -m pytest tests/ -v --tb=short
 
 # Lint
@@ -550,12 +563,13 @@ pyright comparator_backend.py
 ### Expected Output
 
 ```
-tests/test_bug_fixes.py            — 103 passed
+tests/test_bug_fixes.py            — 100 passed
 tests/test_xray_comprehensive.py   — 119 passed
 tests/test_completeness_audit.py   —  78 passed
+tests/test_discovery_install.py    —  85 passed
 tests/test_llm_integration.py      —   3 passed (requires model)
 ─────────────────────────────────────────────────
-TOTAL                                303 passed, 3 warnings
+TOTAL                                385 passed, 3 warnings
 ```
 
 ### Manual Smoke Test

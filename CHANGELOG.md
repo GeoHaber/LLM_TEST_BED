@@ -13,7 +13,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Chat bar "Ask Zena" with `/__chat` endpoint and HOW_TO_USE.md system prompt
 - `/__download-status` and `/__install` endpoints for model management
 - BitNet / incompatible quantization formats (i2_s, i1, i2, i3) skipped at scan time
-- `test_completeness_audit.py` — 78 spec-vs-implementation validation tests (total: 300 tests)
+- `test_completeness_audit.py` — 78 spec-vs-implementation validation tests
+- `test_discovery_install.py` — 85 local tests for Hugging Face discovery, llama.cpp install, hardware detection, and model-card data (total: 385 Python tests)
 
 ### Fixed
 - Backend default port changed 8787 → 8123 (was silently refusing all UI requests)
@@ -21,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Judge option values were `local:N` indices; now use real file paths
 - Judge scoring now fires with just `judge_model + local_models` (no longer requires
   `judge_system_prompt` to be non-empty — falls back to built-in scoring prompt)
+- Model library now scans `C:\AI\Models` by default in addition to home/repo-local locations
+- Hugging Face discovery updated for current `huggingface_hub` API (`trendingScore` sort)
 - `__del__` traceback from llama_cpp on model unload suppressed
 
 ### Changed

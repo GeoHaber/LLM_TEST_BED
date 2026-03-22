@@ -20,6 +20,7 @@ Send any prompt to 1–8 models at once, score every response with a configurabl
 - **5 judge templates** — Medical/Clinical · General Assistant · Code Quality · Reasoning/Math · Multilingual
 - **32 question bank** — categorised test prompts across 6 categories (ops, emergency, cardiology, coding, reasoning, multilingual)
 - **Live performance metrics** — TTFT, tokens/s, RAM delta, total time
+- **Catalog + Hugging Face discovery** — curated download cards plus live GGUF search with source, trust, fit, and preset hints
 - **Monkey Mode 🐒** — randomised model + prompt + judge for unattended regression runs
 - **Zena AI assistant** — built-in chat powered by any of your local models
 - **No build step** — single HTML file + one Python file, pure stdlib backend
@@ -66,7 +67,7 @@ pip install -r requirements.txt
 ## 🗂️ Model Storage
 
 Drop `.gguf` files into **`C:\AI\Models`** — they are auto-detected on startup and after each download.  
-Additional directories can be added by editing `MODEL_DIRS` in `comparator_backend.py`.
+The backend also checks `%USERPROFILE%\\AI\\Models`, a repo-local `models/` folder, and `ZENAI_MODEL_DIR` when set.
 
 ---
 
@@ -81,11 +82,13 @@ comparator_backend.py  :8123
          │
          ├── GET  /                    serve the HTML app
          ├── GET  /__system-info       hardware scan + model list
+         ├── GET  /__discover-models   live Hugging Face GGUF search
          ├── POST /__comparison/mixed  parallel inference + judge scoring
          ├── POST /__chat              Zena assistant chat
-         ├── POST /__download-model    fetch GGUF from URL
+         ├── POST /__download-model    fetch GGUF from URL or repo path
+         ├── GET  /__download-status   download progress
          ├── POST /__install-llama     pip install llama_cpp
-         └── GET  /__install-status   install progress
+         └── GET  /__install-status    install progress
 ```
 
 - **Frontend** — vanilla JS, Tailwind CSS (CDN), no framework, no build step
@@ -126,7 +129,7 @@ All templates output a unified JSON schema: `overall · accuracy · reasoning ·
 | File | Role |
 |---|---|
 | `model_comparator.html` | Complete single-file SPA — UI, CSS, JS |
-| `comparator_backend.py` | Python HTTP API — hardware scan, inference, judge, downloads |
+| `comparator_backend.py` | Python HTTP API — hardware scan, inference, judge, discovery, downloads |
 | `_patch_catalog.py` | Utility: update MODEL_CATALOG in HTML |
 | `requirements.txt` | Python dependencies |
 | `Run_me.bat` | One-click Windows launcher |
@@ -134,6 +137,7 @@ All templates output a unified JSON schema: `overall · accuracy · reasoning ·
 | `LLM_COMPARE_2026.md` | Landscape analysis / competitive research |
 | `Enhance_plan.md` | Enhancement roadmap with cost/benefit analysis |
 | `Rebuild_Prompt.md` | Step-by-step rebuild prompt for LLMs |
+| `tests/test_discovery_install.py` | Discovery / install / hardware / model-card backend tests |
 
 ---
 
@@ -142,7 +146,7 @@ All templates output a unified JSON schema: `overall · accuracy · reasoning ·
 | Setting | Where to change |
 |---|---|
 | Backend port (default `8123`) | Top of `comparator_backend.py` · `const BACKEND` in the HTML |
-| Model scan directories | `MODEL_DIRS` list in `comparator_backend.py` |
+| Model scan directories | `ComparatorHandler.model_dirs` defaults + `ZENAI_MODEL_DIR` |
 | Judge system prompt | Judge Template dropdown in the UI |
 
 ---
@@ -150,19 +154,20 @@ All templates output a unified JSON schema: `overall · accuracy · reasoning ·
 ## 🧪 Tests
 
 ```bash
-# Run all 300 tests (~14 seconds)
+# Run all 385 Python tests (~20 seconds)
 pytest tests/ -v --tb=short
 
 # Individual suites
-pytest tests/test_bug_fixes.py -v           # 103 tests
+pytest tests/test_bug_fixes.py -v           # 100 tests
 pytest tests/test_xray_comprehensive.py -v  # 119 tests
 pytest tests/test_completeness_audit.py -v  #  78 tests
+pytest tests/test_discovery_install.py -v   #  85 tests
 
-# Live inference test (requires GGUF model)
+# Live inference test (already included above, but useful to run alone)
 python tests/test_llm_integration.py
 ```
 
-Open `tests/test_comparator.html` in a browser for the JS unit test suite.
+Open `tests/test_comparator.html` in a browser for the JS / DOM suite, including catalog-card and discovery-card rendering checks.
 
 ---
 

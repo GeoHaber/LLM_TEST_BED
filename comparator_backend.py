@@ -641,12 +641,11 @@ def _discover_hf_models(query: str = "", sort: str = "trending",
             "filter": "gguf",
         }
         if sort == "trending":
-            kwargs["sort"] = "trending"
+            kwargs["sort"] = "trendingScore"
         elif sort == "downloads":
             kwargs["sort"] = "downloads"
         elif sort == "newest":
             kwargs["sort"] = "lastModified"
-            kwargs["direction"] = -1
         elif sort == "likes":
             kwargs["sort"] = "likes"
 
@@ -749,10 +748,11 @@ def _is_safe_model_path(path: str, model_dirs: list[str]) -> bool:
 class ComparatorHandler(BaseHTTPRequestHandler):
     """HTTP request handler for model comparator endpoints."""
 
-    # Model directories: env var > home-based > project-local
+    # Model directories: env var > common locations > home-based > project-local
     model_dirs = [
         d for d in [
             os.environ.get("ZENAI_MODEL_DIR", ""),
+            "C:\\AI\\Models",
             str(Path.home() / "AI" / "Models"),
             str(Path(__file__).resolve().parent / "models"),
         ] if d and Path(d).is_dir()

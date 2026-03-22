@@ -43,8 +43,8 @@ comparator_backend.py  :8123
 2. **Open the UI:** the bat file opens `model_comparator.html` automatically,  
    or open it manually in any modern browser.
 
-3. **First run:** The app scans `C:\AI\Models` (and sub-directories) on load.  
-   Each found `.gguf` file becomes a selectable chip.
+3. **First run:** The app scans configured model directories on load, starting with `C:\AI\Models`.  
+   Each found `.gguf` file becomes a selectable local model entry.
 
 4. **Select models** in the left panel, **type a prompt**, choose a **judge model**,  
    then click the big **RUN** button.
@@ -55,11 +55,18 @@ comparator_backend.py  :8123
 
 | Method | Steps |
 |--------|-------|
-| **Local file** | Drop a `.gguf` into `C:\AI\Models`, then click **Scan** in the app |
-| **Download tab** | Paste a HuggingFace direct-download URL and click Download |
-| **Custom path** | Edit `MODEL_DIRS` in `comparator_backend.py` to add more directories |
+| **Local file** | Drop a `.gguf` into `C:\AI\Models`, then refresh hardware/model status in the app |
+| **Catalog cards** | Open the download modal and pick a curated card with family, quant, context, source, and fit hints |
+| **Discover tab** | Search HuggingFace GGUF repos live, then click a result card to stage it for download |
+| **Custom path** | Set `ZENAI_MODEL_DIR` or adjust `ComparatorHandler.model_dirs` in `comparator_backend.py` |
 
 Model scanning is automatic on page load and after each download completes.
+
+### Model cards
+The download modal exposes two card-based browsers:
+- **Catalog cards** show family, quantization, context preset, HuggingFace source, download popularity, release age, and a hardware-fit label.
+- **Discover cards** show trusted quantizer status, owner, tags, pipeline, likes, downloads, and last-update age.
+- **Selected model summary** shows size, quant, source owner, and the auto-applied preset before download starts.
 
 ---
 
@@ -296,6 +303,8 @@ Returns server configuration constants.
 
 ### `GET /__discover-models?q=llama&sort=trending&limit=30`
 Searches HuggingFace for GGUF models. Cached for 15 minutes.
+Supported UI sort values: `trending`, `downloads`, `newest`, `likes`.
+The backend maps `trending` to the current HuggingFace API sort internally.
 
 ### `POST /__chat`
 Single-turn or multi-turn chat with a local model.
@@ -318,7 +327,7 @@ Response:
 ```
 
 ### `POST /__download-model`
-Start a background download. Returns a `job_id` immediately; poll `/__download-status?job_id=<id>` for progress.
+Start a background download. Returns a `job_id` immediately; poll `/__download-status?job=<id>` for progress.
 
 ```json
 { "model": "https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_M.gguf", "dest": "C:\\AI\\Models" }
@@ -338,10 +347,11 @@ Triggers `pip install llama-cpp-python` with GPU flags. Poll `/__install-status`
 
 | Symptom | Fix |
 |---------|-----|
-| No models found | Check `MODEL_DIRS` in `comparator_backend.py`; ensure `.gguf` files exist |
+| No models found | Put `.gguf` files in `C:\AI\Models`, or set `ZENAI_MODEL_DIR`; verify files are >50 MB |
+| Discovery search empty/error | Check internet access and try another sort; the backend caches results for 15 minutes per query |
 | Backend not responding | Make sure `Run_me.bat` is running; check port 8123 is not blocked |
 | Judge returns `parse error` | Judge model too small or wrong template; try a larger judge |
-| GPU not used | Install `llama-cpp-python` with CUDA: `pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121` |
+| GPU not used | Install `llama-cpp-python` with the recommended build shown in System Info / download modal |
 | High RAM usage | Reduce `n_ctx` in `comparator_backend.py` or run fewer models in parallel |
 | Zena chat slow | Use a smaller/quantised model (Q4_K_M recommended for chat) |
 

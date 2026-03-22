@@ -1168,16 +1168,21 @@ function populateModelLibrary() {
     tbody.innerHTML = `<tr><td colspan="4" class="px-3 py-4 text-center text-[10px] text-slate-400">No GGUF models in C:\\AI\\Models</td></tr>`;
     return;
   }
+  const isDark = document.documentElement.classList.contains('dark');
   tbody.innerHTML = scannedModels.map((m, idx) => {
     const label = m.name.replace('.gguf','').replace(/_/g,' ');
     const quant = m.name.match(/Q\d[_K_MSB]+/i)?.[0] || (m.name.includes('FP16')?'FP16':'—');
     const size  = m.size_gb ? m.size_gb.toFixed(1)+'GB' : '?';
     const sel   = selectedModels.includes(`local:${idx}`);
     const fit   = _modelFitness(m.size_gb || 0);
+    const meta  = _localMeta(m, isDark);
     return `<tr class="model-row ${sel?'selected':''}" onclick="toggleModel('local:${idx}','${m.path.replace(/\\/g,'\\\\')}')" id="modelrow-local:${idx}">
       <td class="px-3 py-1.5 font-medium flex items-center gap-1.5 cursor-pointer">
         <span class="w-1.5 h-1.5 rounded-full ${sel?'bg-primary':'bg-slate-300 dark:bg-slate-600'} shrink-0"></span>
-        <span class="truncate max-w-[120px]" title="${label}">${label}</span>
+        <div style="min-width:0;display:flex;flex-direction:column;gap:3px;">
+          <span class="truncate max-w-[170px]" title="${label}">${label}</span>
+          <div style="display:flex;align-items:center;gap:6px;min-width:0;">${meta.familyHtml}${meta.pathHtml}</div>
+        </div>
       </td>
       <td class="px-2 py-1.5 text-slate-500 text-[10px]">${size}</td>
       <td class="px-2 py-1.5 text-slate-500 text-[10px]">${quant}</td>
@@ -1225,19 +1230,26 @@ function sortModels(col) {
   });
   // re-render with sorted order but keep original indices for selection
   const tbody = document.getElementById('modelLibraryBody');
+  const isDark = document.documentElement.classList.contains('dark');
   tbody.innerHTML = sorted.map(m => {
     const idx = scannedModels.indexOf(m);
     const label = m.name.replace('.gguf','').replace(/_/g,' ');
     const quant = m.name.match(/Q\d[_K_MSB]+/i)?.[0] || (m.name.includes('FP16')?'FP16':'—');
     const size  = m.size_gb ? m.size_gb.toFixed(1)+'GB' : '?';
     const sel   = selectedModels.includes(`local:${idx}`);
+    const fit   = _modelFitness(m.size_gb || 0);
+    const meta  = _localMeta(m, isDark);
     return `<tr class="model-row ${sel?'selected':''}" onclick="toggleModel('local:${idx}','${m.path.replace(/\\/g,'\\\\')}')" id="modelrow-local:${idx}">
       <td class="px-3 py-1.5 font-medium flex items-center gap-1.5 cursor-pointer">
         <span class="w-1.5 h-1.5 rounded-full ${sel?'bg-primary':'bg-slate-300 dark:bg-slate-600'} shrink-0"></span>
-        <span class="truncate max-w-[140px]" title="${label}">${label}</span>
+        <div style="min-width:0;display:flex;flex-direction:column;gap:3px;">
+          <span class="truncate max-w-[170px]" title="${label}">${label}</span>
+          <div style="display:flex;align-items:center;gap:6px;min-width:0;">${meta.familyHtml}${meta.pathHtml}</div>
+        </div>
       </td>
       <td class="px-2 py-1.5 text-slate-500 text-[10px]">${size}</td>
       <td class="px-2 py-1.5 text-slate-500 text-[10px]">${quant}</td>
+      <td class="px-1 py-1.5">${fit}</td>
     </tr>`;
   }).join('');
 }
@@ -2551,6 +2563,79 @@ function _fmtDl(n) {
   return String(n);
 }
 
+function _ctxCompact(nCtx) {
+  if (!nCtx) return 'ctx ?';
+  if (nCtx >= 1000000) return `${(nCtx / 1000000).toFixed(1)}M ctx`;
+  if (nCtx >= 1000) return `${Math.round(nCtx / 1000)}K ctx`;
+  return `${nCtx} ctx`;
+}
+
+function _ownerFromPath(path) {
+  if (!path) return 'unknown';
+  return path.split('/')[0] || 'unknown';
+}
+
+function _presetSummary(preset) {
+  if (!preset) return 'Preset: default';
+  const bits = [];
+  if (preset.temperature != null) bits.push(`temp ${parseFloat(preset.temperature).toFixed(2)}`);
+  if (preset.max_tokens != null) bits.push(`${preset.max_tokens} tok`);
+  if (preset.n_ctx != null) bits.push(_ctxCompact(preset.n_ctx));
+  return bits.length ? bits.join(' · ') : 'Preset: default';
+}
+
+function _familyTone(family, isDark) {
+  const map = {
+    llama: { fg:'#7c3aed', bg:isDark?'#4c1d9540':'#ede9fe' },
+    qwen: { fg:'#2563eb', bg:isDark?'#1e3a5f40':'#dbeafe' },
+    gemma: { fg:'#db2777', bg:isDark?'#83184340':'#fce7f3' },
+    deepseek: { fg:'#0891b2', bg:isDark?'#164e6340':'#cffafe' },
+    phi: { fg:'#16a34a', bg:isDark?'#14532d40':'#dcfce7' },
+    mistral: { fg:'#ea580c', bg:isDark?'#7c2d1240':'#ffedd5' },
+    other: { fg:'#64748b', bg:isDark?'#1e293b':'#f1f5f9' },
+  };
+  return map[(family || 'other').toLowerCase()] || map.other;
+}
+
+function _familyBadge(family, isDark) {
+  const tone = _familyTone(family, isDark);
+  return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:800;padding:2px 7px;border-radius:999px;background:${tone.bg};color:${tone.fg};">${family || 'Other'}</span>`;
+}
+
+function _normalizeModelKey(text) {
+  return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function _catalogOwned(model) {
+  const catalogKey = _normalizeModelKey(model.name + ' ' + (model.hfPath || ''));
+  return scannedModels.some(s => {
+    const localKey = _normalizeModelKey(`${s.name} ${s.path || ''}`);
+    return catalogKey.includes(localKey.slice(0, 10)) || localKey.includes(_normalizeModelKey(model.name).slice(0, 10));
+  });
+}
+
+function _localFamily(name) {
+  const n = (name || '').toLowerCase();
+  if (n.includes('llama')) return 'Llama';
+  if (n.includes('qwen')) return 'Qwen';
+  if (n.includes('gemma')) return 'Gemma';
+  if (n.includes('deepseek')) return 'DeepSeek';
+  if (n.includes('phi')) return 'Phi';
+  if (n.includes('mistral')) return 'Mistral';
+  return 'Other';
+}
+
+function _localMeta(m, isDark) {
+  const family = _localFamily(m.name);
+  const tone = _familyTone(family, isDark);
+  const shortPath = (m.path || '').replace(/\\/g, '\\');
+  return {
+    family,
+    familyHtml: `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:800;padding:2px 7px;border-radius:999px;background:${tone.bg};color:${tone.fg};">${family}</span>`,
+    pathHtml: `<span class="truncate" style="display:block;max-width:220px;font-size:9px;color:${isDark?'#64748b':'#94a3b8'};" title="${shortPath}">${shortPath}</span>`,
+  };
+}
+
 // ─── Tag pill HTML ────────────────────────────────────────────
 const _TAG_META = {
   chat:        { icon:'💬', label:'Chat',        bg:'#3b82f620', fg:'#3b82f6' },
@@ -2655,6 +2740,7 @@ function renderDiscoverResults(models) {
     const modDate = m.lastModified ? new Date(m.lastModified) : null;
     const ageStr = modDate ? _age(modDate.getTime()) : '';
     const tags = (m.tags || []).filter(t => _TAG_META[t] || t === 'gguf').slice(0, 4);
+    const owner = _ownerFromPath(m.id || '');
     const tagHtml = tags.map(t => {
       if (t === 'gguf') return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:#8b5cf620;color:#8b5cf6">📦 GGUF</span>`;
       const tm = _TAG_META[t]; if (!tm) return '';
@@ -2671,6 +2757,7 @@ function renderDiscoverResults(models) {
       ${trustBadge}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">${tagHtml} ${pipeline}</div>
+    <div style="font-size:10px;color:${isDark?'#94a3b8':'#64748b'};line-height:1.5;">Owner: <span style="font-weight:700;color:${isDark?'#cbd5e1':'#334155'};">${safeAuthor || owner}</span> · Click to stage this repo for download</div>
   </div>
   <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:6px;border-top:1px solid ${isDark?'#1e293b':'#e2e8f0'};">
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -2721,12 +2808,14 @@ function renderCatalog() {
   grid.innerHTML = models.map(m => {
     const suit  = _suitability(m.sizeGb);
     const isSel = _selectedCatalogModel?.id === m.id;
-    const isOwned = scannedModels.some(s =>
-      s.name.toLowerCase().includes(m.name.split(' ').slice(0,3).join('').toLowerCase().replace(/[^a-z0-9]/gi,'').slice(0,8))
-    );
+    const isOwned = _catalogOwned(m);
     const ownedBadge = isOwned
       ? `<span style="font-size:9px;font-weight:700;padding:1px 7px;border-radius:999px;background:#16a34a20;color:#16a34a;">✓ Owned</span>`
       : '';
+    const familyBadge = _familyBadge(m.family, isDark);
+    const sourceOwner = _ownerFromPath(m.hfPath);
+    const preset = _presetSummary(m.params_preset);
+    const context = _ctxCompact(m.params_preset?.n_ctx);
     return `
 <div class="mcard${isSel?' card-sel':''}" style="--mc:${m.color};border-left-color:${m.color};"
      onclick="selectCatalogCard('${m.id}')" title="${m.desc}">
@@ -2734,11 +2823,13 @@ function renderCatalog() {
     <div style="min-width:0;">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
         <span style="font-size:13px;font-weight:800;color:${isDark?'#f1f5f9':'#1e293b'};">${m.name}</span>
+        ${familyBadge}
         ${ownedBadge}
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">${_tagHtml(m.tags)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">${_tagHtml(m.tags)}<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:${isDark?'#334155':'#f8fafc'};color:${isDark?'#cbd5e1':'#475569'};">📦 ${m.quant}</span><span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:${isDark?'#0f3a2a':'#ecfdf5'};color:${isDark?'#86efac':'#15803d'};">🧠 ${context}</span></div>
       <div style="font-size:11px;color:${isDark?'#94a3b8':'#64748b'};line-height:1.45;margin-bottom:6px;">${m.desc}</div>
       <div style="font-size:10px;font-weight:600;color:${m.color};">${m.bestFor}</div>
+      <div style="font-size:10px;color:${isDark?'#64748b':'#94a3b8'};margin-top:5px;line-height:1.45;">Source: <span style="font-weight:700;color:${isDark?'#cbd5e1':'#334155'};">${sourceOwner}</span> · ${preset}</div>
     </div>
     <div style="flex-shrink:0;text-align:right;min-width:100px;">
       <div style="font-size:19px;font-weight:900;color:${m.color};">${m.params}</div>
@@ -2809,10 +2900,14 @@ function updateSelectedDisplay() {
   const suit = m ? _suitability(m.sizeGb) : null;
   const name = m ? m.name : custom.split('/').pop();
   const size = m ? `${m.sizeGb.toFixed(1)} GB · ${m.params} · ${m.quant}` : 'custom path';
+  const source = m ? _ownerFromPath(m.hfPath) : custom.split('/')[0];
+  const preset = m ? _presetSummary(m.params_preset) : 'Custom repo path';
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-      <span style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6366f1;">${name}</span>
-      <span style="font-size:10px;color:#64748b;white-space:nowrap;">${size}</span>
+      <div style="display:flex;flex-direction:column;gap:3px;min-width:0;">
+        <span style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#6366f1;">${name}</span>
+        <span style="font-size:10px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${size} · ${source} · ${preset}</span>
+      </div>
       ${suit ? `<span style="font-size:10px;font-weight:700;padding:1px 8px;border-radius:999px;background:${suit.bg};color:${suit.color};white-space:nowrap;">${suit.label}</span>` : ''}
     </div>`;
 }
