@@ -1180,8 +1180,8 @@ function populateModelLibrary() {
       <td class="px-3 py-1.5 font-medium flex items-center gap-1.5 cursor-pointer">
         <span class="w-1.5 h-1.5 rounded-full ${sel?'bg-primary':'bg-slate-300 dark:bg-slate-600'} shrink-0"></span>
         <div style="min-width:0;display:flex;flex-direction:column;gap:3px;">
-          <span class="truncate max-w-[170px]" title="${label}">${label}</span>
-          <div style="display:flex;align-items:center;gap:6px;min-width:0;">${meta.familyHtml}${meta.pathHtml}</div>
+          <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${label}">${label}</span>
+          <div style="display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;">${meta.familyHtml}${meta.pathHtml}</div>
         </div>
       </td>
       <td class="px-2 py-1.5 text-slate-500 text-[10px]">${size}</td>
@@ -1243,8 +1243,8 @@ function sortModels(col) {
       <td class="px-3 py-1.5 font-medium flex items-center gap-1.5 cursor-pointer">
         <span class="w-1.5 h-1.5 rounded-full ${sel?'bg-primary':'bg-slate-300 dark:bg-slate-600'} shrink-0"></span>
         <div style="min-width:0;display:flex;flex-direction:column;gap:3px;">
-          <span class="truncate max-w-[170px]" title="${label}">${label}</span>
-          <div style="display:flex;align-items:center;gap:6px;min-width:0;">${meta.familyHtml}${meta.pathHtml}</div>
+          <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${label}">${label}</span>
+          <div style="display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;">${meta.familyHtml}${meta.pathHtml}</div>
         </div>
       </td>
       <td class="px-2 py-1.5 text-slate-500 text-[10px]">${size}</td>
@@ -2586,20 +2586,20 @@ function _presetSummary(preset) {
 
 function _familyTone(family, isDark) {
   const map = {
-    llama: { fg:'#7c3aed', bg:isDark?'#4c1d9540':'#ede9fe' },
-    qwen: { fg:'#2563eb', bg:isDark?'#1e3a5f40':'#dbeafe' },
-    gemma: { fg:'#db2777', bg:isDark?'#83184340':'#fce7f3' },
-    deepseek: { fg:'#0891b2', bg:isDark?'#164e6340':'#cffafe' },
-    phi: { fg:'#16a34a', bg:isDark?'#14532d40':'#dcfce7' },
-    mistral: { fg:'#ea580c', bg:isDark?'#7c2d1240':'#ffedd5' },
-    other: { fg:'#64748b', bg:isDark?'#1e293b':'#f1f5f9' },
+    llama:    { fg:isDark?'#c4b5fd':'#7c3aed', bg:isDark?'#2e1065':'#ede9fe' },
+    qwen:     { fg:isDark?'#93c5fd':'#2563eb', bg:isDark?'#172554':'#dbeafe' },
+    gemma:    { fg:isDark?'#f9a8d4':'#db2777', bg:isDark?'#500724':'#fce7f3' },
+    deepseek: { fg:isDark?'#67e8f9':'#0891b2', bg:isDark?'#083344':'#cffafe' },
+    phi:      { fg:isDark?'#86efac':'#16a34a', bg:isDark?'#052e16':'#dcfce7' },
+    mistral:  { fg:isDark?'#fdba74':'#ea580c', bg:isDark?'#431407':'#ffedd5' },
+    other:    { fg:isDark?'#94a3b8':'#64748b', bg:isDark?'#1e293b':'#f1f5f9' },
   };
   return map[(family || 'other').toLowerCase()] || map.other;
 }
 
 function _familyBadge(family, isDark) {
   const tone = _familyTone(family, isDark);
-  return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:800;padding:2px 7px;border-radius:999px;background:${tone.bg};color:${tone.fg};">${family || 'Other'}</span>`;
+  return `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:800;padding:1px 6px;border-radius:999px;background:${tone.bg};color:${tone.fg};white-space:nowrap;">${family || 'Other'}</span>`;
 }
 
 function _normalizeModelKey(text) {
@@ -2628,11 +2628,15 @@ function _localFamily(name) {
 function _localMeta(m, isDark) {
   const family = _localFamily(m.name);
   const tone = _familyTone(family, isDark);
-  const shortPath = (m.path || '').replace(/\\/g, '\\');
+  // Show parent directory only — filename is already visible in the row label
+  const fullPath = (m.path || '').replace(/\//g, '\\');
+  const parts = fullPath.split('\\').filter(Boolean);
+  const dirDisplay = parts.length > 1 ? parts.slice(0, -1).join('\\') : fullPath;
+  const pathColor = isDark ? '#475569' : '#94a3b8';
   return {
     family,
-    familyHtml: `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:800;padding:2px 7px;border-radius:999px;background:${tone.bg};color:${tone.fg};">${family}</span>`,
-    pathHtml: `<span class="truncate" style="display:block;max-width:220px;font-size:9px;color:${isDark?'#64748b':'#94a3b8'};" title="${shortPath}">${shortPath}</span>`,
+    familyHtml: `<span style="display:inline-flex;align-items:center;font-size:9px;font-weight:800;padding:1px 6px;border-radius:999px;background:${tone.bg};color:${tone.fg};white-space:nowrap;">${family}</span>`,
+    pathHtml: `<span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;font-size:9px;color:${pathColor};" title="${fullPath}">${dirDisplay}</span>`,
   };
 }
 

@@ -25,7 +25,7 @@ Create a single flat project directory with these files:
 ```
 LLM_TEST_BED/
 ├── comparator_backend.py        # Python HTTP backend (~1850 lines)
-├── model_comparator.html        # Single-file SPA frontend (~3700 lines)
+├── model_comparator.html        # Single-file SPA frontend (~3830 lines)
 ├── _patch_catalog.py            # Utility: update MODEL_CATALOG in HTML
 ├── Run_me.bat                   # Windows one-click launcher
 ├── pyproject.toml               # Project metadata & tool config

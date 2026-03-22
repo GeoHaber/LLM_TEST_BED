@@ -29,3 +29,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - `Run_me.bat` simplified to single server on port 8123
 - `requirements.txt` — dependencies pinned to exact installed versions
+- Local model library table: family badges now use solid, high-contrast dark-mode colors (replaces faint semi-transparent overlays)
+- Local model rows now show the parent directory path instead of the full GGUF file path (filename is already visible in the row label)
+- Model name column uses flexible overflow truncation instead of a fixed 170 px cap
