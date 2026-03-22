@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `test_zombie_and_process_audit.py` — 21 tests for daemon threads, port binding, connection error handling, model browser cleanup, loading spinners
+- Loading spinners on Discover grid, Catalog grid, and Download button
+- ModelScope as third model discovery source alongside HuggingFace and Discover
+- ConnectionAbortedError/ConnectionResetError/BrokenPipeError handling on all write paths (`_send_json`, `do_OPTIONS`, `_sse`, static file serving, `log_message`)
+- Enhancement plan updated with latest research: GGUF metadata extraction, epistemic reliability scoring, contamination detection, memory estimation
+- Total test count: 406 (was 385)
+
+### Fixed
+- Backend no longer crashes with stack trace when browser tab is closed mid-response
+- Removed non-functional GitHub tab from model download browser
+
+### Changed
+- Rebuild_Prompt.md updated with connection error handling guidance and new test suite
+- Enhance_plan.md updated with July 2026 research, process hygiene audit results, and new enhancement items (E14-E17)
+
+## [Previous]
+
+### Added
 - Vulkan GPU backend support for AMD Radeon 890M (RDNA 3.5)
 - ThreadingHTTPServer — inference no longer blocks UI polling requests
 - Backend now serves `model_comparator.html` directly (single-server setup)

@@ -1,15 +1,15 @@
 # Enhancement Plan — Zen LLM Compare
 
-> **Date:** March 2026
+> **Date:** July 2026
 > **Status:** Active planning
-> **Total tests passing:** 300 (103 + 119 + 78) + 3 integration
+> **Total tests passing:** 406 (100 + 119 + 78 + 85 + 21 + 3 integration)
 
 ---
 
 ## 1. Current State Assessment
 
 ### What's Working (All Green)
-- 300/300 automated tests pass (0 failures)
+- 406/406 automated tests pass (0 failures)
 - All documented API endpoints functional
 - CORS restricted to localhost ✅
 - SSRF prevention on downloads ✅
@@ -17,12 +17,17 @@
 - Path traversal prevention ✅
 - Judge dual-pass bias mitigation ✅
 - SSE streaming endpoint ✅
-- 5-layer judge score extraction ✅
+- 6-layer judge score extraction ✅
 - Hardware auto-detection (CPU/GPU/RAM) ✅
 - Model scanning with incompatible-quant filtering ✅
 - Token counting via tiktoken (not naive word split) ✅
 - Dark mode, RTL, 6 languages ✅
 - Batch mode, CSV export, ELO, History, Leaderboard ✅
+- ConnectionAbortedError handling on all write paths ✅
+- Daemon threads on all background workers ✅
+- Loading spinners on Discover/Catalog/Download ✅
+- 42 curated model catalog entries ✅
+- 3 discovery sources: HuggingFace, Discover, ModelScope ✅
 
 ### Known Gaps (from LLM_COMPARE_2026.md spec)
 
@@ -33,7 +38,9 @@
 | G3 | ~~README lists wrong judge template names~~ | Low | ✅ Fixed — README & HOW_TO_USE updated |
 | G4 | ~~`Rebuild_Prompt.md` says server binds `0.0.0.0`~~ | Low | ✅ Fixed — corrected to `127.0.0.1` |
 | G5 | No persistent results / ELO across sessions beyond localStorage | Medium | localStorage works but is browser-only |
-| G6 | No per-model loading indicators during streaming | Medium | model_start event exists but UI animation unclear |
+| G6 | ~~No per-model loading indicators during streaming~~ | Medium | ✅ Fixed — loading spinners added to Discover/Catalog/Download |
+| G7 | ~~ConnectionAbortedError crashes on client disconnect~~ | High | ✅ Fixed — all write paths now catch connection errors |
+| G8 | ~~GitHub tab in model browser non-functional~~ | Low | ✅ Fixed — removed, replaced by HuggingFace + Discover + ModelScope |
 
 ---
 
@@ -55,31 +62,47 @@
 - Frontier models can tune hyperparameters but not generate novel hypotheses
 - Validates that task-specific evaluation (our approach) > abstract benchmarks
 
-### 2.2 GitHub Trends (March 2026)
+### 2.2 GitHub Trends (July 2026)
 
 | Project | Stars | Relevance |
 |---------|-------|-----------|
-| Open WebUI | 127k | Chat-first, no comparison — not a competitor |
+| Open WebUI | 127k+ | Chat-first, no comparison — not a competitor |
 | llamafile | 23.8k | Zero-install philosophy — we share this DNA |
 | lm-evaluation-harness | 11.7k | CLI academic benchmarks — different audience |
 | vLLM | 48k | High-throughput inference server — potential backend upgrade |
 | SGLang | 12k | Structured generation — could improve judge output reliability |
+| koboldcpp | Popular | Run GGUF easily, KoboldAI UI — zero-install competitor |
+| shimmy | New | Rust inference server, OpenAI-API compat, auto-discovery |
+| cortex.cpp | Growing | Jan.ai's local API platform for GGUF/ONNX |
+| node-llama-cpp | Growing | JSON schema enforcement on generation level — inspiration for E1 |
+| llmfit | New | Find what runs on your hardware — model-fitting approach we already do |
+| Colosseum | New | Multi-agent debate arena with cross-judging — validates our judge approach |
 
-**Key insight from HuggingFace community:** GGUF is becoming the standard distribution format. Ollama models are just GGUF underneath. Our bet on GGUF-only is correct.
+**Key insights:**
+- **GGUF is the standard** — 403 public repos tagged `gguf` on GitHub, Ollama uses GGUF underneath
+- **JSON schema enforcement** — node-llama-cpp enforces schemas at generation level (not post-hoc)
+- **Contamination detection** — capbencher adds leakage alarms to benchmarks (we should consider)
+- **Epistemic reliability** — ERR-EVAL tests hallucination handling (new evaluation dimension)
+- **Size vs precision tradeoff** — size-precision-slm-bench found tiny models at FP16 can beat large INT4 models
 
-### 2.3 r/LocalLLaMA Community Priorities (2026)
+### 2.3 r/LocalLLaMA Community Priorities (2025-2026)
 
-1. **Structured output / JSON mode** — Users want guaranteed JSON from judges (SGLang, Outlines)
-2. **MCP integration** — Model Context Protocol gaining universal adoption
-3. **Multimodal** — Image understanding in Llama 4, Phi-4-vision
+1. **Structured output / JSON mode** — Users want guaranteed JSON from judges (SGLang, Outlines, llama.cpp grammar)
+2. **MCP integration** — Model Context Protocol gaining universal adoption; expose comparison as MCP tools
+3. **Multimodal** — Image understanding in Llama 4, Phi-4-vision; evaluation needs vision prompts
 4. **Longer contexts** — 10M tokens in Llama 4 Scout; evaluation needs to handle this
-5. **Speculative decoding** — 2-3x faster inference with draft models
+5. **Speculative decoding** — 2-3x faster inference with draft models (llama.cpp supports it)
+6. **GGUF metadata** — Parse model architecture, context length, quant type without loading (HF Hub has a viewer)
+7. **Memory estimation** — hf-mem CLI can estimate inference memory — useful for model-fit scoring
 
 ### 2.4 HuggingFace Best Practices
 
-- **GGUF metadata parsing**: `gguf` Python package can extract model metadata (context length, architecture, quant type) without loading the model — we should use this for better model cards
+- **GGUF metadata parsing**: `gguf` Python package (or `@huggingface/gguf` JS) can extract model metadata (context length, architecture, quant type) without loading the model — we should use this for better model cards
 - **Hub API pagination**: Our discovery uses `limit=60` which may miss results; pagination improves coverage
 - **Repo file listing**: `api.list_repo_files()` lets users pick specific quant variants from a repo
+- **Quantization types matter**: HuggingFace documents 20+ quant types from F64 to IQ1_S. Our INCOMPATIBLE_QUANTS filter (IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S) is correct — these are too lossy for meaningful comparison
+- **GGUF tensor viewer**: HuggingFace Hub has a built-in GGUF metadata/tensor viewer — we could link to it from model cards
+- **MXFP4/NVFP4**: New quantization formats emerging (Intel auto-round supports them) — monitor for llama.cpp support
 
 ---
 
@@ -214,6 +237,10 @@
 - [ ] **MCP server mode** — expose comparison as MCP tools for Claude/Copilot
 - [ ] **Headless CI mode** — run benchmarks from CLI, output results as JSON/JUnit XML
 - [ ] **Plugin system** — custom judge templates, custom score extractors
+- [ ] **E14: Epistemic reliability scoring** — test how well models handle uncertainty, avoid hallucinations (inspired by ERR-EVAL)
+- [ ] **E15: GGUF metadata viewer** — link to HuggingFace's built-in tensor viewer from model cards, show architecture/context/quant details
+- [ ] **E16: Memory estimation** — integrate hf-mem-style memory prediction to show "will this model fit?" before download
+- [ ] **E17: Contamination detection** — flag models that score suspiciously well on common benchmarks (inspired by capbencher)
 
 ---
 
@@ -233,15 +260,22 @@ This is a low-priority fix as it only affects fallback layers 4-5 (most judges o
 
 ---
 
-## 6. Process Hygiene Recommendations
+## 6. Process Hygiene — Audit Results (July 2026)
 
-The zombie process investigation found that **all 12 Python processes were VS Code extension LSP servers** (isort, autopep8), **not from the app or tests**. Two were orphaned from a dead VS Code window (PID 10908).
+A comprehensive zombie process investigation found:
+- **PID 18928** — Main backend server on port 8123 (legitimate, parent=cmd)
+- **PID 19832** — Orphan test server on port 8124 (zombie from earlier manual debug session, NOT from app or tests)
+- **7 VS Code extension LSP servers** (isort, autopep8) — all legitimate
 
-**Preventive measures:**
-1. VS Code extensions should use `--single-instance` flag or PID file to prevent duplicates
-2. `Run_me.bat` already cleans up port 8123 on start — this is correct
-3. The backend uses `daemon_threads = True` — child threads die when the main process exits
-4. Test servers use `daemon=True` threads — they die when pytest exits
+**Root cause:** The orphan on port 8124 was manually started during a debug session (`python comparator_backend.py 8124`) and its parent terminal was closed without stopping it.
+
+**Preventive measures verified:**
+1. `ThreadingHTTPServer` uses `daemon_threads = True` — child threads die with main process ✅
+2. All download/install worker threads use `daemon=True` — die when backend exits ✅
+3. Cache warmup thread uses `daemon=True` — dies when backend exits ✅
+4. Test servers use `daemon=True` threads — die when pytest exits ✅
+5. `Run_me.bat` cleans up port 8123 on start ✅
+6. 21 process hygiene tests validate all of the above ✅
 
 **No code changes needed** — the app's process management is correct.
 
@@ -250,13 +284,15 @@ The zombie process investigation found that **all 12 Python processes were VS Co
 ## 7. Test Commands
 
 ```bash
-# Run all tests (300 tests, ~14 seconds)
+# Run all tests (406 tests, ~30 seconds)
 python -m pytest tests/ -v --tb=short
 
 # Run specific suites
-python -m pytest tests/test_bug_fixes.py -v           # 103 tests
-python -m pytest tests/test_xray_comprehensive.py -v   # 119 tests
-python -m pytest tests/test_completeness_audit.py -v   #  78 tests
+python -m pytest tests/test_bug_fixes.py -v                # 100 tests
+python -m pytest tests/test_xray_comprehensive.py -v       # 119 tests
+python -m pytest tests/test_completeness_audit.py -v       #  78 tests
+python -m pytest tests/test_discovery_install.py -v        #  85 tests
+python -m pytest tests/test_zombie_and_process_audit.py -v #  21 tests
 
 # Run with timing
 python -m pytest tests/ -v --durations=10

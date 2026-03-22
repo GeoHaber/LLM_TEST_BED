@@ -41,6 +41,7 @@ LLM_TEST_BED/
     ├── test_completeness_audit.py  # 78 spec-vs-implementation tests
     ├── test_discovery_install.py   # 85 discovery / install / hardware tests
     ├── test_xray_comprehensive.py  # 119 functional tests
+    ├── test_zombie_and_process_audit.py  # 21 process hygiene / daemon / connection error tests
     ├── test_llm_integration.py     # Live inference integration test
     └── test_comparator.html        # Browser Mocha test suite
 ```
@@ -536,6 +537,16 @@ Requires an actual GGUF model on disk. Tests:
 
 Run separately: `python tests/test_llm_integration.py`
 
+### 9.6 `tests/test_zombie_and_process_audit.py` — 21 process hygiene tests
+
+Validates:
+1. **Daemon threads** — All background threads (`ThreadingHTTPServer`, download workers, install workers, cache warmup) use `daemon=True`
+2. **Port binding** — Server binds to `127.0.0.1`, not `0.0.0.0`
+3. **Connection error handling** — All write operations catch `ConnectionAbortedError`, `ConnectionResetError`, `BrokenPipeError`, `OSError`
+4. **Server lifecycle** — Test ports are free, cache thread is daemon
+5. **Model browser cleanup** — No GitHub tab in download modal (removed in favour of HuggingFace + Discover + ModelScope)
+6. **Loading spinners** — Discover grid, catalog grid, and download button have loading indicators
+
 ---
 
 ## 10. Run & Verify
@@ -567,9 +578,10 @@ tests/test_bug_fixes.py            — 100 passed
 tests/test_xray_comprehensive.py   — 119 passed
 tests/test_completeness_audit.py   —  78 passed
 tests/test_discovery_install.py    —  85 passed
+tests/test_zombie_and_process_audit.py — 21 passed
 tests/test_llm_integration.py      —   3 passed (requires model)
 ─────────────────────────────────────────────────
-TOTAL                                385 passed, 3 warnings
+TOTAL                                406 passed, 3 warnings
 ```
 
 ### Manual Smoke Test
@@ -633,3 +645,17 @@ curl -X POST http://localhost:8123/__download-model \
 - **Do NOT** serve on `0.0.0.0` in production. This is a local development tool only.
 - **Do NOT** forget to `del model` after inference — llama-cpp-python does not auto-release VRAM.
 - **Do NOT** hardcode model paths — always use `MODEL_DIRS` and dynamic scanning.
+
+### 12.1 Connection Error Handling (Critical)
+
+Every place the backend writes to `self.wfile` or sends headers must be wrapped in:
+```python
+except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
+    pass
+```
+This prevents stack traces when a browser tab is closed mid-response. Applies to:
+- `_send_json()` — the main JSON response helper
+- `do_OPTIONS()` — CORS preflight
+- `_sse()` — SSE event streaming
+- Static file serving in `do_GET`
+- `log_message()` — suppress broken-pipe logging noise

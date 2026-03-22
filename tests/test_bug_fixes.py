@@ -376,7 +376,7 @@ class TestIntegration:
     def test_system_info_has_restricted_cors(self):
         """System info endpoint CORS header must not be wildcard."""
         status, headers, body = _get("/__system-info",
-            headers={"Origin": "http://localhost:8123"})
+            headers={"Origin": "http://localhost:8123"}, timeout=30)
         assert status == 200
         acao = headers.get("Access-Control-Allow-Origin", "")
         assert acao != "*", f"CORS should not be wildcard, got: {acao}"
