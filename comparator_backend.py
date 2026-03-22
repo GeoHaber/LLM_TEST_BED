@@ -612,6 +612,30 @@ def validate_download_url(url: str) -> bool:
     return True
 
 
+# ─ System info cache (hardware detection is slow on first call) ───────────────
+_sysinfo_cache: dict | None = None
+_sysinfo_lock = threading.Lock()
+_SYSINFO_TTL = 60  # seconds — rescan models each minute, hw rarely changes
+
+
+def get_system_info_cached(model_dirs: list[str]) -> dict:
+    """Return system info, recomputing only after TTL expires."""
+    global _sysinfo_cache
+    with _sysinfo_lock:
+        if _sysinfo_cache is not None:
+            age = time.time() - _sysinfo_cache.get("timestamp", 0)
+            if age < _SYSINFO_TTL:
+                # Refresh model list inline (fast) while keeping cached hw data
+                fresh_models = scan_models(model_dirs)
+                result = dict(_sysinfo_cache)
+                result["models"] = fresh_models
+                result["model_count"] = len(fresh_models)
+                return result
+        info = get_system_info(model_dirs)
+        _sysinfo_cache = info
+        return info
+
+
 # ─ HF Model Discovery cache ──────────────────────────────────────────────────
 _discovery_cache: dict[str, dict] = {}  # cache_key → {ts, data}
 _discovery_lock = threading.Lock()
@@ -870,7 +894,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
     # ── Handlers ─────────────────────────────────────────────────────────────
     def _handle_system_info(self) -> None:
         try:
-            info = get_system_info(self.model_dirs)
+            info = get_system_info_cached(self.model_dirs)
             self._send_json(200, info)
         except Exception as e:
             self._send_json(500, {"error": str(e)})
@@ -1728,6 +1752,17 @@ def run_server(port: int = 8123) -> None:
     print(f"[OK] Comparator backend listening on http://127.0.0.1:{port}")
     print("   System info: /__system-info")
     print("   Comparison:  /__comparison/mixed")
+
+    # Warm up the system-info cache in a background thread so the first
+    # browser request returns instantly instead of waiting for GPU/CPU detection.
+    def _warm_cache():
+        try:
+            get_system_info_cached(ComparatorHandler.model_dirs)
+            print("[cache] system-info warm-up done")
+        except Exception as exc:
+            print(f"[cache] warm-up error: {exc}")
+
+    threading.Thread(target=_warm_cache, daemon=True).start()
     server.serve_forever()
 
 

@@ -1077,7 +1077,7 @@ let _llamaRec = {};   // recommended llama.cpp build info from backend
 // ─── System Status ────────────────────────────────────────────
 async function checkSystemStatus() {
   try {
-    const resp = await fetch(`${BACKEND}/__system-info`);
+    const resp = await fetch(`${BACKEND}/__system-info`, { signal: AbortSignal.timeout(15000) });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     scannedModels = data.models || [];
@@ -3507,6 +3507,8 @@ window.addEventListener('load', () => {
   checkSystemStatus();
   refreshActiveDownloads();
   _renderLeaderboard();
+  // Auto-refresh: re-poll backend every 20 s so the UI reconnects after restart
+  setInterval(checkSystemStatus, 20000);
 });
 
 // ─── ZENA CHAT ────────────────────────────────────────────────
