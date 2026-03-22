@@ -1142,13 +1142,19 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             self._cors_headers()
             self.end_headers()
 
+            _client_disconnected = False
+
             def _sse(event: str, payload: dict) -> None:
+                nonlocal _client_disconnected
+                if _client_disconnected:
+                    return
                 try:
                     line = f"event: {event}\ndata: {json.dumps(payload)}\n\n"
                     self.wfile.write(line.encode("utf-8"))
                     self.wfile.flush()
                 except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
-                    pass
+                    _client_disconnected = True
+                    print("[SSE] Client disconnected, suppressing further events", flush=True)
 
             # Stream model inference one-by-one
             try:
@@ -1293,21 +1299,66 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                     for idx, path in enumerate(safe_models)
                 }
 
-                # As each model completes, send its result immediately via SSE
-                for fut in concurrent.futures.as_completed(futures):
-                    result = fut.result()
-                    responses.append(result)
-                    idx = futures[fut]
-                    # Send the full response text as a single SSE "token" event
-                    # so the card fills in instantly
-                    _sse("token", {
-                        "model": result["model"],
-                        "model_index": idx,
-                        "token": result.get("response", ""),
-                        "token_count": result.get("tokens", 0),
-                        "elapsed_ms": round(result.get("time_ms", 0)),
-                    })
-                    _sse("model_done", {**result, "model_index": idx})
+                # As each model completes, send its result immediately via SSE.
+                # Use inference_timeout so a hung model doesn't block forever.
+                try:
+                    for fut in concurrent.futures.as_completed(
+                        futures, timeout=inference_timeout
+                    ):
+                        try:
+                            result = fut.result()
+                        except Exception as exc:
+                            idx = futures[fut]
+                            model_name = os.path.basename(
+                                safe_models[idx]
+                            ).replace(".gguf", "")
+                            result = {
+                                "model": model_name,
+                                "model_path": safe_models[idx],
+                                "path": safe_models[idx],
+                                "response": f"\u274c Thread error: {exc}",
+                                "error": str(exc),
+                                "time_ms": 0, "tokens": 0,
+                                "tokens_per_sec": 0, "quality_score": 0,
+                                "ttft_ms": 0, "ram_delta_mb": 0,
+                                "model_size_mb": 0, "efficiency": 0,
+                                "response_chars": 0,
+                            }
+                            print(f"  [model-{idx}] {model_name} THREAD ERROR: {exc}", flush=True)
+
+                        responses.append(result)
+                        idx = futures[fut]
+                        _sse("token", {
+                            "model": result["model"],
+                            "model_index": idx,
+                            "token": result.get("response", ""),
+                            "token_count": result.get("tokens", 0),
+                            "elapsed_ms": round(result.get("time_ms", 0)),
+                        })
+                        _sse("model_done", {**result, "model_index": idx})
+                except concurrent.futures.TimeoutError:
+                    # Some models exceeded inference_timeout
+                    for fut, idx in futures.items():
+                        if not fut.done():
+                            model_name = os.path.basename(
+                                safe_models[idx]
+                            ).replace(".gguf", "")
+                            fut.cancel()
+                            timeout_result = {
+                                "model": model_name,
+                                "model_path": safe_models[idx],
+                                "path": safe_models[idx],
+                                "response": f"\u23f1 Inference timed out after {inference_timeout}s",
+                                "error": "timeout",
+                                "time_ms": round(inference_timeout * 1000),
+                                "tokens": 0, "tokens_per_sec": 0,
+                                "quality_score": 0, "ttft_ms": 0,
+                                "ram_delta_mb": 0, "model_size_mb": 0,
+                                "efficiency": 0, "response_chars": 0,
+                            }
+                            responses.append(timeout_result)
+                            _sse("model_done", {**timeout_result, "model_index": idx})
+                            print(f"  [model-{idx}] {model_name} TIMED OUT after {inference_timeout}s", flush=True)
 
             dispatch_wall = time.time() - _dispatch_t0
             print(f"[compare] All {total_models} models done in {dispatch_wall:.1f}s wall-clock", flush=True)
@@ -1483,8 +1534,39 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         ) as pool:
             futures = {pool.submit(_run_one, p): p for p in model_paths}
             results = []
-            for fut in concurrent.futures.as_completed(futures):
-                results.append(fut.result())
+            try:
+                for fut in concurrent.futures.as_completed(
+                    futures, timeout=inference_timeout
+                ):
+                    try:
+                        results.append(fut.result())
+                    except Exception as exc:
+                        p = futures[fut]
+                        model_name = os.path.basename(p).replace(".gguf", "")
+                        print(f"[compare] THREAD ERROR {model_name}: {exc}", flush=True)
+                        results.append({
+                            "model": model_name, "model_path": p, "path": p,
+                            "response": f"\u274c Thread error: {exc}",
+                            "error": str(exc),
+                            "time_ms": 0, "tokens": 0, "tokens_per_sec": 0,
+                            "quality_score": 0, "ttft_ms": 0, "ram_delta_mb": 0,
+                            "model_size_mb": 0, "efficiency": 0, "response_chars": 0,
+                        })
+            except concurrent.futures.TimeoutError:
+                for fut, p in futures.items():
+                    if not fut.done():
+                        model_name = os.path.basename(p).replace(".gguf", "")
+                        fut.cancel()
+                        print(f"[compare] TIMEOUT {model_name} after {inference_timeout}s", flush=True)
+                        results.append({
+                            "model": model_name, "model_path": p, "path": p,
+                            "response": f"\u23f1 Inference timed out after {inference_timeout}s",
+                            "error": "timeout",
+                            "time_ms": round(inference_timeout * 1000),
+                            "tokens": 0, "tokens_per_sec": 0, "quality_score": 0,
+                            "ttft_ms": 0, "ram_delta_mb": 0,
+                            "model_size_mb": 0, "efficiency": 0, "response_chars": 0,
+                        })
 
         # Restore original model order
         path_order = {p: i for i, p in enumerate(model_paths)}
