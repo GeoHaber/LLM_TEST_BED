@@ -97,6 +97,72 @@ comparator_backend.py  :8123
 - **Backend** — Python `ThreadingHTTPServer` (stdlib only + `llama_cpp`)
 - **Judge** — same backend, different model instance; fires after all comparisons complete
 
+### Parallel Inference Engine
+
+The core architectural decision is **true thread-parallel inference** using `stream=False`.
+This design originates from the [Local_LLM Swarm](https://github.com/GeoHaberC/Local_LLM) `run_arena()` pattern.
+
+```
+ User clicks RUN (2 models selected)
+          │
+  ┌───────┴────────┐
+  │  Phase 1:      │   Sequential — one at a time
+  │  Pre-load      │   Each model loaded into LRU cache (up to 8)
+  │  models        │   SSE events: model_loading → model_loaded
+  └───────┬────────┘
+          │
+  ┌───────┴────────┐
+  │  Phase 2:      │   ThreadPoolExecutor(max_workers=6)
+  │  Parallel      │   ┌─ Thread 0: llm.create_chat_completion(stream=False)
+  │  dispatch      │   │  → GIL released during entire C++ GGML compute
+  │                │   ├─ Thread 1: llm.create_chat_completion(stream=False)
+  │                │   │  → runs TRULY in parallel (not serialised)
+  │  as_completed()│   └─ Results arrive as each model finishes
+  └───────┬────────┘
+          │
+  ┌───────┴────────┐
+  │  Phase 3:      │   Judge model scores each response
+  │  Judge scoring  │   2-pass position-bias mitigation (Zheng et al.)
+  └───────┬────────┘
+          │
+       Results table + per-model metrics
+```
+
+**Why `stream=False`?**
+`llama-cpp-python` wraps C++ llama.cpp. With `stream=True`, Python holds the GIL during each
+`yield` token iteration, which **serialises** threads — models run one-after-another despite
+`ThreadPoolExecutor`. With `stream=False`, the entire C++ compute block runs with the GIL
+released, enabling genuine parallel execution. The trade-off: no per-token streaming (text
+appears all-at-once when a model finishes), but wall-clock time equals the **slowest** model
+instead of the **sum** of all models.
+
+### Model Cache (LRU)
+
+```python
+_MODEL_CACHE_SIZE = 8          # keep up to 8 Llama instances in memory
+_model_cache: OrderedDict      # path → Llama, LRU eviction
+_get_or_load_model(path, n_ctx)  # cache-hit = instant, miss = load + evict oldest
+```
+
+Models stay resident between runs. The first comparison is slower (cold-load), subsequent
+runs with the same models are near-instant on the load phase. Parameters: `flash_attn=True`,
+`n_batch=2048`, `use_mmap=True`, `use_mlock=True`.
+
+### Per-Model Metrics
+
+Each inference run captures and displays:
+
+| Metric | Description |
+|--------|-------------|
+| **Tokens/s** | Completion tokens ÷ wall-clock seconds |
+| **Efficiency** | Tokens/s ÷ model file size (GB) — normalised speed |
+| **Total time** | Wall-clock milliseconds for full completion |
+| **Prompt eval** | Prompt tokens processed (from `usage.prompt_tokens`) |
+| **Response length** | Completion token count + character count |
+| **RAM delta** | Process RSS increase during inference (via `psutil`) |
+| **Model size** | GGUF file size on disk |
+| **TTFT (est.)** | Estimated time-to-first-token (total ÷ tokens) |
+
 ---
 
 ## 🖥️ Usage
@@ -107,8 +173,8 @@ comparator_backend.py  :8123
 4. **Choose a judge template** and a **judge model**
 5. **Click RUN** — results appear as each model finishes; judge scores follow
 
-### Results table (12 columns)
-`Rank · Model · TTFT · Tokens/s · RAM ↑ · Quality ★ · Accuracy · Reasoning · Instruction · Safety · Response · Actions`
+### Results table (14 columns)
+`Model · Response Preview · TTFT · Total · Tok/s · Efficiency · RAM ↑ · Size · Quality ★ · Accuracy · Reasoning · Instruction · Safety · Cost`
 
 ---
 

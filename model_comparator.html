@@ -365,6 +365,15 @@ body { font-family: 'Inter', sans-serif; }
       </div>
     </div>
 
+    <!-- Metric: Efficiency -->
+    <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
+      <div class="panel-header">EFFICIENCY</div>
+      <div class="p-2.5">
+        <span class="text-base font-bold" id="metricEfficiency">—</span>
+        <p class="text-[9px] text-slate-400 mt-0.5">tok/s per GB</p>
+      </div>
+    </div>
+
     <!-- File Picker -->
     <div class="workbench-panel flex-1 border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
       <div class="panel-header">
@@ -414,7 +423,7 @@ body { font-family: 'Inter', sans-serif; }
           <option value="reasoning">🧠 Reasoning / Math</option>
           <option value="multilingual">🌍 Multilingual quality</option>
         </select>
-        <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-1">Default: <strong class="text-primary">QwQ 32B</strong> or GPT-4o if cloud key</p>
+        <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-1">Default: <strong class="text-primary">Lightest local</strong> (fast judge) or GPT-4o if cloud key</p>
       </div>
     </div>
   </div>
@@ -448,7 +457,9 @@ body { font-family: 'Inter', sans-serif; }
                 <th class="px-4 py-2.5" title="Time to first token">TTFT</th>
                 <th class="px-4 py-2.5">Total</th>
                 <th class="px-4 py-2.5">Tok/s</th>
+                <th class="px-4 py-2.5" title="Tokens/s normalised by model size (GB)">Eff.</th>
                 <th class="px-4 py-2.5" title="Extra RAM consumed">RAM ↑</th>
+                <th class="px-4 py-2.5" title="Model file size on disk">Size</th>
                 <th class="px-4 py-2.5">Quality</th>
                 <th class="px-4 py-2.5" title="Factual / clinical accuracy">Accuracy</th>
                 <th class="px-4 py-2.5" title="Logical reasoning score">Reasoning</th>
@@ -1248,11 +1259,11 @@ function sortModels(col) {
 }
 
 function _autoPickJudge() {
-  // Returns the path of the best available judge model.
-  // Backend reports size_gb; fall back to size_mb if ever present.
+  // Returns the path of the lightest available judge model.
+  // Judge task is simple (scoring), so smallest = fastest.
   if (!scannedModels.length) return '';
   const sizeMB = m => (m.size_gb || 0) * 1024 + (m.size_mb || 0);
-  return scannedModels.reduce((a, b) => sizeMB(a) >= sizeMB(b) ? a : b).path;
+  return scannedModels.reduce((a, b) => sizeMB(a) <= sizeMB(b) ? a : b).path;
 }
 
 function escHtml(s) {
@@ -1260,7 +1271,7 @@ function escHtml(s) {
 }
 
 function _getZenaModel() {
-  // Priority: explicit select override → current judge (if local path) → auto-pick largest
+  // Priority: explicit select override → current judge (if local path) → auto-pick lightest
   const sel = document.getElementById('zenaChatModelSel');
   if (sel?.value) return sel.value;
   const judgeVal = document.getElementById('judgeModel')?.value || '';
@@ -1639,12 +1650,18 @@ async function _runStreamComparison(body, judgeModel) {
 }
 
 let _streamingResponses = {};
+let _streamTimerInterval = null;
+let _streamStartTime = 0;
 
 function _showStreamingUI(modelPaths) {
   document.getElementById('resultsPlaceholder').classList.add('hidden');
   document.getElementById('resultsSection').classList.remove('hidden');
   // Clear results table
   document.getElementById('resultsBody').innerHTML = '';
+  // Start global elapsed timer
+  _streamStartTime = Date.now();
+  if (_streamTimerInterval) clearInterval(_streamTimerInterval);
+  _streamTimerInterval = setInterval(() => _updateStreamTimers(), 1000);
   // Show race bars area
   const rc = document.getElementById('responseCards');
   if (rc) {
@@ -1655,59 +1672,122 @@ function _showStreamingUI(modelPaths) {
       return `<div id="stream-card-${i}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden">
         <div class="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 shrink-0">
           <span class="font-bold text-[12px] text-primary truncate">${escHtml(name)}</span>
-          <span class="font-mono text-[10px] text-slate-400" id="stream-stats-${i}">waiting…</span>
+          <span class="font-mono text-[10px] text-slate-400" id="stream-stats-${i}">⏳ waiting…</span>
         </div>
         <div class="relative h-2 bg-slate-100 dark:bg-slate-800 shrink-0">
           <div id="stream-bar-${i}" class="h-full bg-primary transition-all" style="width:0%;"></div>
         </div>
-        <div id="stream-text-${i}" class="p-3 overflow-y-auto text-[12px] leading-relaxed text-slate-700 dark:text-slate-200 whitespace-pre-wrap" style="max-height:260px;min-height:60px;color:#94a3b8;">⏳ Waiting…</div>
+        <div id="stream-phase-${i}" class="px-3 py-1 text-[10px] font-semibold text-amber-500 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-900/20" style="display:none;"></div>
+        <div id="stream-text-${i}" class="p-3 overflow-y-auto text-[12px] leading-relaxed text-slate-700 dark:text-slate-200 whitespace-pre-wrap" style="max-height:260px;min-height:60px;color:#94a3b8;">⏳ Waiting for process to start…</div>
       </div>`;
     }).join('');
+  }
+}
+
+function _updateStreamTimers() {
+  // Update elapsed time on any card still in loading/generating phase
+  const elapsed = ((Date.now() - _streamStartTime) / 1000).toFixed(0);
+  for (const idx in _streamingResponses) {
+    const sr = _streamingResponses[idx];
+    if (sr._done) continue;
+    const statsEl = document.getElementById(`stream-stats-${idx}`);
+    if (!statsEl) continue;
+    if (sr._phase === 'loading') {
+      statsEl.textContent = `📦 Loading… ${elapsed}s`;
+    } else if (sr._phase === 'generating' && sr.tokens.length === 0) {
+      statsEl.textContent = `🧠 Preparing… ${elapsed}s`;
+    }
+    // If tokens are already flowing, the token handler updates stats
+  }
+  // Update global status bar with elapsed
+  const statusMsg = document.getElementById('statusMsg');
+  if (statusMsg && statusMsg.textContent.includes('Running') || statusMsg?.textContent.includes('Loading')) {
+    // Don't override; the event handlers set status. But update any parenthesized time.
   }
 }
 
 function _handleStreamEvent(event, payload, judgeModel) {
   if (event === 'model_start') {
     const idx = payload.model_index;
-    _streamingResponses[idx] = { tokens: [], model: payload.model };
+    _streamingResponses[idx] = { tokens: [], model: payload.model, _phase: 'started', _done: false, _startTime: Date.now() };
     const textEl = document.getElementById(`stream-text-${idx}`);
     if (textEl) { textEl.textContent = ''; textEl.style.color = ''; }
     const statsEl = document.getElementById(`stream-stats-${idx}`);
-    if (statsEl) statsEl.textContent = `generating… (${payload.model_index+1}/${payload.total_models})`;
-    showStatus(`🔄 Running model ${payload.model_index+1}/${payload.total_models}: ${payload.model}`, 'info');
+    if (statsEl) statsEl.textContent = `⏳ starting… (${payload.model_index+1}/${payload.total_models})`;
+    const sizeTxt = payload.size_mb ? ` (${(payload.size_mb/1024).toFixed(1)} GB)` : '';
+    showStatus(`🔄 Running model ${payload.model_index+1}/${payload.total_models}: ${payload.model}${sizeTxt}`, 'info');
+  }
+  else if (event === 'model_loading') {
+    const idx = payload.model_index;
+    if (_streamingResponses[idx]) _streamingResponses[idx]._phase = 'loading';
+    const phaseEl = document.getElementById(`stream-phase-${idx}`);
+    if (phaseEl) {
+      phaseEl.style.display = '';
+      const sizeTxt = payload.size_mb ? ` (${(payload.size_mb/1024).toFixed(1)} GB)` : '';
+      phaseEl.innerHTML = `📦 Loading model into memory${sizeTxt}… <span class="inline-block animate-pulse">●●●</span>`;
+    }
+    const textEl = document.getElementById(`stream-text-${idx}`);
+    if (textEl) textEl.innerHTML = '<span class="animate-pulse text-amber-400">Loading model weights into RAM/VRAM… This can take 30–90s for large models.</span>';
+    const barEl = document.getElementById(`stream-bar-${idx}`);
+    if (barEl) { barEl.style.width = '15%'; barEl.classList.add('animate-pulse'); }
+    showStatus(`📦 Loading model ${payload.model_index+1}/${payload.total_models}: ${payload.model}…`, 'info');
+  }
+  else if (event === 'model_loaded') {
+    const idx = payload.model_index;
+    if (_streamingResponses[idx]) _streamingResponses[idx]._phase = 'generating';
+    const phaseEl = document.getElementById(`stream-phase-${idx}`);
+    if (phaseEl) {
+      phaseEl.style.display = '';
+      phaseEl.innerHTML = `✅ Loaded in ${(payload.load_time_ms/1000).toFixed(1)}s — <span class="text-emerald-500">generating tokens…</span>`;
+    }
+    const textEl = document.getElementById(`stream-text-${idx}`);
+    if (textEl) { textEl.textContent = ''; textEl.style.color = ''; }
+    const barEl = document.getElementById(`stream-bar-${idx}`);
+    if (barEl) { barEl.style.width = '25%'; barEl.classList.remove('animate-pulse'); }
+    const statsEl = document.getElementById(`stream-stats-${idx}`);
+    if (statsEl) statsEl.textContent = `🧠 generating…`;
+    showStatus(`🧠 Model ${payload.model_index+1}/${payload.total_models}: ${payload.model} loaded in ${(payload.load_time_ms/1000).toFixed(1)}s — generating…`, 'info');
   }
   else if (event === 'token') {
     const idx = payload.model_index;
     if (_streamingResponses[idx]) {
       _streamingResponses[idx].tokens.push(payload.token);
+      _streamingResponses[idx]._phase = 'generating';
     }
+    // Hide loading phase banner once tokens flow
+    const phaseEl = document.getElementById(`stream-phase-${idx}`);
+    if (phaseEl && payload.token_count === 1) phaseEl.style.display = 'none';
     const textEl = document.getElementById(`stream-text-${idx}`);
     if (textEl) textEl.textContent += payload.token;
     // Update progress bar based on token count vs max_tokens
     const maxTok = parseInt(document.getElementById('paramMaxTokens')?.value || '512');
-    const pct = Math.min(100, (payload.token_count / maxTok) * 100);
+    const pct = Math.min(100, 25 + (payload.token_count / maxTok) * 75);
     const barEl = document.getElementById(`stream-bar-${idx}`);
     if (barEl) barEl.style.width = `${pct}%`;
     const statsEl = document.getElementById(`stream-stats-${idx}`);
     if (statsEl) {
       const tps = payload.token_count / (payload.elapsed_ms / 1000);
-      statsEl.textContent = `${payload.token_count} tok · ${tps.toFixed(1)} t/s`;
+      statsEl.textContent = `${payload.token_count} tok · ${tps.toFixed(1)} t/s · ${(payload.elapsed_ms/1000).toFixed(0)}s`;
     }
   }
   else if (event === 'model_done') {
     const idx = payload.model_index !== undefined ? payload.model_index :
       Object.keys(_streamingResponses).find(k => _streamingResponses[k]?.model === payload.model);
     if (idx !== undefined) {
+      if (_streamingResponses[idx]) _streamingResponses[idx]._done = true;
       const barEl = document.getElementById(`stream-bar-${idx}`);
-      if (barEl) { barEl.style.width = '100%'; barEl.classList.add('bg-emerald-500'); barEl.classList.remove('bg-primary'); }
+      if (barEl) { barEl.style.width = '100%'; barEl.classList.add('bg-emerald-500'); barEl.classList.remove('bg-primary', 'animate-pulse'); }
       const statsEl = document.getElementById(`stream-stats-${idx}`);
-      if (statsEl) statsEl.textContent = `✅ ${payload.tokens} tok · ${payload.tokens_per_sec} t/s · ${(payload.time_ms/1000).toFixed(2)}s`;
+      if (statsEl) statsEl.textContent = `✅ ${payload.tokens} tok · ${payload.tokens_per_sec} t/s · ${(payload.time_ms/1000).toFixed(1)}s`;
+      const phaseEl = document.getElementById(`stream-phase-${idx}`);
+      if (phaseEl) phaseEl.style.display = 'none';
     }
   }
   else if (event === 'judge_start') {
     showStatus('⚖️ Judge model scoring responses…', 'info');
   }
   else if (event === 'judge_done' || event === 'done') {
+    if (_streamTimerInterval) { clearInterval(_streamTimerInterval); _streamTimerInterval = null; }
     if (payload.responses) {
       displayResults({ responses: payload.responses, judge_model: judgeModel }, judgeModel);
       // Save to history
@@ -1718,9 +1798,13 @@ function _handleStreamEvent(event, payload, judgeModel) {
         timestamp: payload.timestamp || Date.now()/1000,
       });
     }
-    if (event === 'done') showStatus('✓ Comparison complete!', 'success');
+    if (event === 'done') {
+      const totalSec = ((_streamStartTime ? Date.now() - _streamStartTime : 0) / 1000).toFixed(1);
+      showStatus(`✓ Comparison complete! Total: ${totalSec}s`, 'success');
+    }
   }
   else if (event === 'error') {
+    if (_streamTimerInterval) { clearInterval(_streamTimerInterval); _streamTimerInterval = null; }
     showStatus(`❌ Stream error: ${payload.error}`, 'error');
   }
 }
@@ -1733,19 +1817,79 @@ function displayResults(data, judgeModel) {
   document.getElementById('resultsPlaceholder').classList.add('hidden');
   document.getElementById('resultsSection').classList.remove('hidden');
 
-  // — top metric panels —
-  const tpsAvg  = results.reduce((s,r) => s+(r.tokens_per_sec||0),0)/results.length;
-  const qualAvg = results.reduce((s,r) => s+(r.judge_score||r.quality_score||0),0)/results.length;
-  const ttftAvg = results.filter(r=>r.ttft_ms>0).reduce((s,r,_,a) => s+(r.ttft_ms||0)/a.length,0);
-  const memAvg  = results.filter(r=>r.ram_delta_mb>0).reduce((s,r,_,a) => s+(r.ram_delta_mb||0)/a.length,0);
-  const fastest = Math.min(...results.map(r => r.time_ms||Infinity));
+  // — top metric panels — show per-model breakdown —
+  const _shortName = (r) => {
+    const p = r.model_path || r.path || r.model || '';
+    const n = p.split('\\').pop().split('/').pop().replace('.gguf','');
+    return n.length > 18 ? n.substring(0,16) + '…' : n;
+  };
+  const _perModelHtml = (results, field, unit, decimals=1) => {
+    if (results.length === 1) {
+      const v = results[0][field] || 0;
+      return `<span class="text-base font-bold">${v ? v.toFixed(decimals) + ' ' + unit : '—'}</span>`;
+    }
+    return results.map(r => {
+      const v = r[field] || 0;
+      const name = _shortName(r);
+      return `<div class="flex justify-between items-center text-[10px]"><span class="truncate text-slate-500 dark:text-slate-400 mr-1">${escHtml(name)}</span><span class="font-bold font-mono">${v ? v.toFixed(decimals) + ' ' + unit : '—'}</span></div>`;
+    }).join('');
+  };
 
-  document.getElementById('metricSpeed').textContent  = tpsAvg  ? `${tpsAvg.toFixed(1)} t/s`  : '—';
-  document.getElementById('metricQuality').textContent = judgeModel ? `${qualAvg.toFixed(1)}/10` : '—';
-  document.getElementById('qualityBar').style.width    = judgeModel ? `${qualAvg*10}%` : '0%';
-  document.getElementById('metricTTFT').textContent   = ttftAvg  ? `${ttftAvg.toFixed(0)} ms`  : '—';
-  document.getElementById('metricMem').textContent    = memAvg   ? `${memAvg.toFixed(0)} MB`   : '—';
-  document.getElementById('metricFastest').textContent= fastest < Infinity ? `${(fastest/1000).toFixed(2)}s` : '—';
+  // Speed panel
+  const speedEl = document.getElementById('metricSpeed');
+  if (speedEl) speedEl.innerHTML = _perModelHtml(results, 'tokens_per_sec', 't/s');
+
+  // Quality panel
+  const qualEl = document.getElementById('metricQuality');
+  if (qualEl) {
+    if (judgeModel) {
+      qualEl.innerHTML = results.map(r => {
+        let jd = r.judge_detail || {};
+        if (typeof jd === 'string') { try { jd = JSON.parse(jd); } catch { jd = {}; } }
+        const v = jd.overall || r.judge_score || r.quality_score || 0;
+        const name = _shortName(r);
+        if (results.length === 1) return `<span class="text-base font-bold">${v.toFixed(1)}/10</span>`;
+        return `<div class="flex justify-between items-center text-[10px]"><span class="truncate text-slate-500 dark:text-slate-400 mr-1">${escHtml(name)}</span><span class="font-bold font-mono">${v.toFixed(1)}/10</span></div>`;
+      }).join('');
+    } else {
+      qualEl.textContent = '—';
+    }
+  }
+  const qualAvg = results.reduce((s,r) => s+(r.judge_score||r.quality_score||0),0)/results.length;
+  document.getElementById('qualityBar').style.width = judgeModel ? `${qualAvg*10}%` : '0%';
+
+  // TTFT panel
+  const ttftEl = document.getElementById('metricTTFT');
+  if (ttftEl) ttftEl.innerHTML = _perModelHtml(results, 'ttft_ms', 'ms', 0);
+
+  // RAM panel
+  const memEl = document.getElementById('metricMem');
+  if (memEl) memEl.innerHTML = _perModelHtml(results, 'ram_delta_mb', 'MB', 0);
+
+  // Fastest panel
+  const fastEl = document.getElementById('metricFastest');
+  if (fastEl) {
+    fastEl.innerHTML = results.map(r => {
+      const v = r.time_ms || 0;
+      const name = _shortName(r);
+      if (results.length === 1) return `<span class="text-base font-bold">${(v/1000).toFixed(1)}s</span>`;
+      return `<div class="flex justify-between items-center text-[10px]"><span class="truncate text-slate-500 dark:text-slate-400 mr-1">${escHtml(name)}</span><span class="font-bold font-mono">${(v/1000).toFixed(1)}s</span></div>`;
+    }).join('');
+  }
+
+  // Efficiency panel (tok/s per GB of model file)
+  const effEl = document.getElementById('metricEfficiency');
+  if (effEl) effEl.innerHTML = _perModelHtml(results, 'efficiency', 't/s/GB');
+
+  // Update mini speed chart with per-model bars
+  const chartEl = document.getElementById('speedMiniChart');
+  if (chartEl && results.length > 0) {
+    const maxTps = Math.max(...results.map(r => r.tokens_per_sec || 0), 1);
+    chartEl.innerHTML = results.map(r => {
+      const pct = Math.max(5, ((r.tokens_per_sec || 0) / maxTps) * 100);
+      return `<div class="bg-primary w-full rounded-t-sm transition-all" style="height:${pct}%;" title="${_shortName(r)}: ${(r.tokens_per_sec||0).toFixed(1)} t/s"></div>`;
+    }).join('');
+  }
 
   // — per-row helpers —
   const stars = n => {
@@ -1792,7 +1936,9 @@ function displayResults(data, judgeModel) {
     const ttft    = r.ttft_ms  > 0 ? `${r.ttft_ms.toFixed(0)}ms`  : '—';
     const total   = ((r.time_ms||0)/1000).toFixed(2) + 's';
     const tps     = (r.tokens_per_sec||0).toFixed(1);
+    const eff     = (r.efficiency||0).toFixed(1);
     const ram     = r.ram_delta_mb > 0 ? `${r.ram_delta_mb.toFixed(0)}` : '—';
+    const sizeMb  = r.model_size_mb > 0 ? `${r.model_size_mb}` : '—';
     const isLocal = !r.provider;
     const cost    = isLocal ? '$0.000' : `$${(r.cost||0).toFixed(3)}`;
     const preview = (r.response||'—').substring(0,80);
@@ -1812,7 +1958,9 @@ function displayResults(data, judgeModel) {
       <td class="px-4 py-2.5 font-mono text-[10px] ${ttftColor(r.ttft_ms)}">${ttft}</td>
       <td class="px-4 py-2.5 font-mono text-[10px]">${total}</td>
       <td class="px-4 py-2.5 font-mono text-[10px]">${tps}</td>
+      <td class="px-4 py-2.5 font-mono text-[10px]" title="Tokens/s per GB model size">${eff}</td>
       <td class="px-4 py-2.5 font-mono text-[10px] ${ramColor(r.ram_delta_mb)}">${ram !== '—' ? ram + ' MB' : '—'}</td>
+      <td class="px-4 py-2.5 font-mono text-[10px] text-slate-500">${sizeMb !== '—' ? sizeMb + ' MB' : '—'}</td>
       <td class="px-4 py-2.5">${judgeModel ? stars(overall) : '<span class="text-slate-400 text-[9px]">—</span>'}</td>
       <td class="px-4 py-2.5">${judgeModel ? scoreBadge(accuracy) : '<span class="text-slate-400 text-[9px]">—</span>'}</td>
       <td class="px-4 py-2.5">${judgeModel ? scoreBadge(reasoning) : '<span class="text-slate-400 text-[9px]">—</span>'}</td>
@@ -1867,13 +2015,15 @@ function getModelName(path) {
 
 function exportCSV() {
   if (!_lastResults.length) return;
-  const header = 'Model,TTFT(ms),Total(s),Tok/s,RAM_delta(MB),Overall,Accuracy,Reasoning,Instruction,Safety,Cost';
+  const header = 'Model,TTFT(ms),Total(s),Tok/s,Efficiency(t/s/GB),RAM_delta(MB),Size(MB),Overall,Accuracy,Reasoning,Instruction,Safety,Cost,Tokens,Response_chars';
   const rows = _lastResults.map(r => {
     const name = getModelName(r.model_path||r.path||'');
     const ttft = (r.ttft_ms||0).toFixed(1);
     const t    = ((r.time_ms||0)/1000).toFixed(2);
     const tps  = (r.tokens_per_sec||0).toFixed(1);
+    const eff  = (r.efficiency||0).toFixed(1);
     const ram  = (r.ram_delta_mb||0).toFixed(0);
+    const size = (r.model_size_mb||0).toFixed(0);
     let jd = r.judge_detail || {};
     if (typeof jd === 'string') { try { jd = JSON.parse(jd); } catch { jd = {}; } }
     const overall  = (jd.overall      ?? r.judge_score ?? r.quality_score ?? 0).toFixed(1);
@@ -1883,7 +2033,9 @@ function exportCSV() {
     const safety   = (jd.safety       ?? '').toString();
     const isLocal  = !r.provider;
     const cost     = isLocal ? '0.000' : (r.cost||0).toFixed(3);
-    return `"${name}",${ttft},${t},${tps},${ram},${overall},"${accuracy}","${reasoning}","${instF}","${safety}","${cost}"`;
+    const tokens   = (r.tokens||0).toString();
+    const chars    = (r.response_chars||(r.response||'').length||0).toString();
+    return `"${name}",${ttft},${t},${tps},${eff},${ram},${size},${overall},"${accuracy}","${reasoning}","${instF}","${safety}","${cost}",${tokens},${chars}`;
   });
   const blob = new Blob([[header,...rows].join('\n')], {type:'text/csv'});
   const a = Object.assign(document.createElement('a'), {href:URL.createObjectURL(blob), download:'llm_comparison.csv'});
@@ -3388,7 +3540,7 @@ async function runMonkey() {
   document.getElementById('prompt').value = q.q;
   document.getElementById('systemPrompt').value = q.sys || '';
 
-  // Auto-pick judge: largest installed model
+  // Auto-pick judge: lightest installed model (fast scoring)
   const autoJudgePath = _autoPickJudge();
   const judgeSel = document.getElementById('judgeModel');
   if (judgeSel && autoJudgePath) {

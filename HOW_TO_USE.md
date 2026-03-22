@@ -25,12 +25,43 @@ Browser (model_comparator.html)
         ▼        ▼
 comparator_backend.py  :8123
         │
-        ├── /__system-info      (GET)  — scan models, RAM, GPU
-        ├── /__comparison/mixed (POST) — run models + judge
-        ├── /__download-model   (POST) — fetch GGUF from URL
-        ├── /__install-llama    (POST) — pip install llama_cpp
-        ├── /__install-status   (GET)  — install progress
-        └── /__chat             (POST) — Zena chat assistant
+        ├── /__system-info        (GET)  — scan models, RAM, GPU
+        ├── /__comparison/mixed   (POST) — run models + judge (non-streaming)
+        ├── /__comparison/stream  (POST) — SSE streaming comparison
+        ├── /__download-model     (POST) — fetch GGUF from URL
+        ├── /__install-llama      (POST) — pip install llama_cpp
+        ├── /__install-status     (GET)  — install progress
+        ├── /__discover-models    (GET)  — live HuggingFace GGUF search
+        ├── /__download-status    (GET)  — download progress
+        └── /__chat               (POST) — Zena chat assistant
+```
+
+### Parallel Execution Model (Swarm Pattern)
+
+All selected models run in **true parallel** using `ThreadPoolExecutor` with `stream=False`.
+
+**How it works:**
+
+1. **Phase 1 — Pre-load** (sequential): Each model is loaded into an LRU cache (up to 8 models).
+   SSE events (`model_loading`, `model_loaded`) update progress bars in the UI.
+
+2. **Phase 2 — Parallel dispatch**: All models are submitted to a `ThreadPoolExecutor(max_workers=6)`.
+   Each thread calls `llm.create_chat_completion(stream=False)`. Because `stream=False` runs the
+   entire C++ GGML computation with the Python GIL released, threads execute genuinely in parallel.
+   As each model completes, an SSE event delivers the full result immediately.
+
+3. **Phase 3 — Judge scoring**: A separate (typically smallest) model scores each response using
+   2-pass position-bias mitigation.
+
+**Why `stream=False` instead of `stream=True`?**
+With `stream=True`, Python receives tokens via generator `yield`, which re-acquires the GIL
+on every iteration. This serialises threads — models run one-after-another despite being in
+a thread pool. With `stream=False`, a single C++ call completes the entire generation while
+the GIL is released. Wall-clock time = slowest model, not sum of all models.
+
+**Model Cache (LRU):** Up to 8 `Llama` instances stay resident in memory between runs.
+Cold-load on first comparison, near-instant on subsequent runs.
+Params: `flash_attn=True`, `n_batch=2048`, `use_mmap=True`, `use_mlock=True`.
 ```
 
 ---
@@ -128,29 +159,33 @@ Click any chip to instantly load that prompt into the text box.
 
 ## Results Table
 
-After a run, the results table shows 12 columns:
+After a run, the results table shows these columns:
 
 | Column | Description |
 |--------|-------------|
-| **Rank** | Sorted by `overall` judge score (highest = 1) |
 | **Model** | Short model name (`.gguf` removed) |
-| **TTFT (s)** | Time to first token in seconds |
-| **Tokens/s** | Generation throughput |
+| **Response Preview** | Truncated preview (click to expand full text) |
+| **TTFT (est.)** | Estimated time-to-first-token (total_time ÷ tokens) |
+| **Total** | Total wall-clock time for the full completion |
+| **Tok/s** | Generation throughput (completion_tokens ÷ seconds) |
+| **Efficiency** | Tokens/s per GB of model file size — normalised speed metric |
 | **RAM ↑ (MB)** | RAM consumed during inference |
+| **Size** | Model file size on disk (MB) |
 | **Quality ★** | Overall judge score rendered as stars (0–5) |
-| **Accuracy** | Judge sub-score |
-| **Reasoning** | Judge sub-score |
-| **Instruction** | Judge sub-score |
-| **Safety** | Judge sub-score |
-| **Response** | Truncated preview (click ▶ to expand full text) |
-| **Actions** | Copy / Expand buttons |
+| **Accuracy** | Judge sub-score (0–10) |
+| **Reasoning** | Judge sub-score (0–10) |
+| **Instruction** | Did the model follow instructions? (✓ / ✗) |
+| **Safety** | Safety assessment (safe / refused / unsafe) |
+| **Cost** | Estimated cost ($0.000 for local models) |
 
 ### Metrics Summary Bar
-Above the table shows the champions for the current run:
-- ⚡ **Fastest TTFT** — model with lowest time to first token
-- 🚀 **Best Tok/s** — highest throughput
-- 💾 **Peak RAM** — highest RAM delta recorded
-- ⭐ **Top Quality** — highest overall judge score
+Above the table, per-model metric panels show side-by-side comparisons:
+- ⚡ **TOK/S** — per-model generation speed with mini bar chart
+- ⭐ **QUALITY** — per-model judge scores with quality bar
+- 🎯 **FIRST TOKEN** — per-model estimated TTFT
+- 💾 **PEAK RAM** — per-model RAM delta
+- ⏱ **FASTEST** — per-model total time
+- 📊 **EFFICIENCY** — per-model tokens/s per GB (normalised speed)
 
 ---
 

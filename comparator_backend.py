@@ -12,8 +12,12 @@ Endpoints:
     POST /__comparison/mixed           → {local_models, online_models, prompt, ...} → results
 """
 
+import collections
+import concurrent.futures
+import gc
 import ipaddress
 import json
+import multiprocessing
 import os
 import re
 import sys
@@ -36,6 +40,58 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle each request in a separate thread so inference doesn't block the UI."""
 
     daemon_threads = True
+
+
+# ─ LRU Model Cache ──────────────────────────────────────────────────────────
+# Keeps the last N loaded Llama models in memory to avoid repeated disk I/O.
+_MODEL_CACHE_SIZE = int(os.environ.get("LLM_MODEL_CACHE_SIZE", "8"))
+_model_cache: collections.OrderedDict[str, Any] = collections.OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _get_or_load_model(path: str, n_ctx: int = 4096):
+    """Return a cached Llama model or load a new one. Thread-safe LRU cache."""
+    import llama_cpp
+
+    cache_key = f"{path}::ctx{n_ctx}"
+    with _cache_lock:
+        if cache_key in _model_cache:
+            _model_cache.move_to_end(cache_key)
+            return _model_cache[cache_key]
+
+    # Load outside lock to avoid blocking other cache lookups
+    llm = llama_cpp.Llama(
+        model_path=path,
+        n_ctx=n_ctx,
+        n_threads=os.cpu_count() or 4,
+        n_gpu_layers=-1,
+        flash_attn=True,
+        n_batch=2048,
+        use_mmap=True,
+        use_mlock=True,
+        verbose=False,
+    )
+
+    with _cache_lock:
+        _model_cache[cache_key] = llm
+        _model_cache.move_to_end(cache_key)
+        # Evict oldest if over capacity
+        while len(_model_cache) > _MODEL_CACHE_SIZE:
+            _evicted_key, evicted_llm = _model_cache.popitem(last=False)
+            del evicted_llm
+
+    return llm
+
+
+def _evict_model_cache():
+    """Clear entire model cache (call before judge or when memory is needed)."""
+    with _cache_lock:
+        _model_cache.clear()
+    gc.collect()
+
+
+# (multiprocessing worker removed — using ThreadPoolExecutor with stream=False
+# which properly releases GIL during the C++ inference compute phase)
 
 
 # ─ System info detection ────────────────────────────────────────────────────
@@ -1102,8 +1158,6 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 _sse("done", {})
                 return
 
-            import gc
-
             responses: list[dict] = []
             n_ctx = params["n_ctx"]
             max_tokens = params["max_tokens"]
@@ -1112,33 +1166,61 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             repeat_penalty = params["repeat_penalty"]
             inference_timeout = params["inference_timeout"]
 
-            for model_idx, path in enumerate(safe_models):
+            # ── Phase 1: Pre-load all models into cache (sequential) ──────
+            total_models = len(safe_models)
+
+            print(f"\n[compare] Pre-loading {total_models} model(s)…", flush=True)
+            for idx, path in enumerate(safe_models):
+                model_name = os.path.basename(path).replace(".gguf", "")
+                file_size_mb = round(os.path.getsize(path) / (1024 * 1024))
+                _sse("model_loading", {
+                    "model": model_name, "model_index": idx,
+                    "total_models": total_models,
+                    "size_mb": file_size_mb, "phase": "loading",
+                })
+                print(f"  Loading {model_name} ({file_size_mb} MB)…", flush=True)
+                t_load = time.time()
+                _get_or_load_model(path, n_ctx)
+                load_ms = round((time.time() - t_load) * 1000)
+                _sse("model_loaded", {
+                    "model": model_name, "model_index": idx,
+                    "total_models": total_models,
+                    "load_time_ms": load_ms, "phase": "ready",
+                })
+                print(f"  {model_name} loaded in {load_ms/1000:.1f}s", flush=True)
+
+            # ── Phase 2: Dispatch inference with stream=False in parallel ─
+            # stream=False lets llama.cpp run the entire C++ compute while
+            # the GIL is released, enabling TRUE parallel execution across
+            # threads — exactly like the original Swarm run_arena pattern.
+            print(f"[compare] Dispatching prompt to {total_models} model(s) in parallel…", flush=True)
+            _dispatch_t0 = time.time()
+
+            # Tell the frontend all models are now generating
+            for idx, path in enumerate(safe_models):
                 model_name = os.path.basename(path).replace(".gguf", "")
                 _sse("model_start", {
-                    "model": model_name,
-                    "model_index": model_idx,
-                    "total_models": len(safe_models),
+                    "model": model_name, "model_index": idx,
+                    "total_models": total_models,
                 })
 
+            def _thread_infer(model_idx: int, path: str) -> dict:
+                """Run inference on a pre-loaded model with stream=False."""
+                model_name = os.path.basename(path).replace(".gguf", "")
+                model_size_mb = round(os.path.getsize(path) / (1024 * 1024)) if os.path.exists(path) else 0
+                llm = _get_or_load_model(path, n_ctx)
+
                 t0 = time.time()
-                llm = None
-                ram_before = (
-                    (proc.memory_info().rss // (1024 * 1024))
-                    if (HAS_PSUTIL and proc is not None)
-                    else 0
-                )
+                ram_before = 0
                 try:
-                    llm = llama_cpp.Llama(
-                        model_path=path,
-                        n_ctx=n_ctx,
-                        n_threads=os.cpu_count() or 4,
-                        n_gpu_layers=-1,
-                        verbose=False,
-                    )
-                    ttft_ms = 0.0
-                    chunks: list[str] = []
-                    token_count = 0
-                    for chunk in llm.create_chat_completion(
+                    if HAS_PSUTIL:
+                        ram_before = proc.memory_info().rss // (1024 * 1024) if proc else 0
+                except Exception:
+                    pass
+
+                try:
+                    # stream=False → entire C++ compute runs with GIL released
+                    out = llm.create_chat_completion(
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": prompt},
@@ -1147,41 +1229,32 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                         temperature=temperature,
                         top_p=top_p,
                         repeat_penalty=repeat_penalty,
-                        stream=True,
-                    ):
-                        delta = chunk["choices"][0].get("delta", {}).get("content", "")
-                        if delta:
-                            if not ttft_ms:
-                                ttft_ms = (time.time() - t0) * 1000
-                            chunks.append(delta)
-                            token_count += 1
-                            # Stream every token to client
-                            _sse("token", {
-                                "model": model_name,
-                                "model_index": model_idx,
-                                "token": delta,
-                                "token_count": token_count,
-                                "elapsed_ms": round((time.time() - t0) * 1000),
-                            })
-                        if (time.time() - t0) > inference_timeout:
-                            chunks.append("\n\n[⏱ Inference timed out]")
-                            break
+                        stream=False,
+                    )
 
                     elapsed_ms = (time.time() - t0) * 1000
-                    response_text = "".join(chunks)
-                    completion_tokens = max(1, count_tokens(response_text))
+                    response_text = out["choices"][0]["message"]["content"] or ""
+                    completion_tokens = out.get("usage", {}).get("completion_tokens", 0)
+                    if not completion_tokens:
+                        completion_tokens = max(1, count_tokens(response_text))
+                    prompt_tokens = out.get("usage", {}).get("prompt_tokens", 0)
                     tps = completion_tokens / (elapsed_ms / 1000) if elapsed_ms > 0 else 0
-                    ram_after = (
-                        (proc.memory_info().rss // (1024 * 1024))
-                        if (HAS_PSUTIL and proc is not None)
-                        else 0
-                    )
+                    # TTFT not available with stream=False; use total time / tokens as proxy
+                    ttft_ms = elapsed_ms / max(completion_tokens, 1)
+
+                    ram_after = 0
+                    try:
+                        if HAS_PSUTIL:
+                            ram_after = proc.memory_info().rss // (1024 * 1024) if proc else 0
+                    except Exception:
+                        pass
                     ram_delta = max(0, ram_after - ram_before)
 
+                    model_size_gb = model_size_mb / 1024 if model_size_mb else 0
+                    efficiency = round(tps / model_size_gb, 2) if model_size_gb > 0 else 0
+
                     result = {
-                        "model": model_name,
-                        "model_path": path,
-                        "path": path,
+                        "model": model_name, "model_path": path, "path": path,
                         "response": response_text,
                         "time_ms": round(elapsed_ms, 1),
                         "tokens": completion_tokens,
@@ -1189,32 +1262,62 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                         "quality_score": 0,
                         "ttft_ms": round(ttft_ms, 1),
                         "ram_delta_mb": ram_delta,
+                        "prompt_tokens": prompt_tokens,
+                        "model_size_mb": model_size_mb,
+                        "efficiency": efficiency,
+                        "response_chars": len(response_text),
                     }
-                    responses.append(result)
-                    _sse("model_done", result)
+                    print(f"  [model-{model_idx}] {model_name} done — {completion_tokens} tok, {tps:.1f} t/s, eff={efficiency:.1f} t/s/GB, {elapsed_ms/1000:.1f}s", flush=True)
+                    return result
                 except Exception as exc:
                     elapsed_ms = (time.time() - t0) * 1000
                     result = {
-                        "model": model_name,
-                        "model_path": path,
-                        "path": path,
+                        "model": model_name, "model_path": path, "path": path,
                         "response": f"❌ Error: {exc}",
                         "error": str(exc),
                         "time_ms": round(elapsed_ms, 1),
-                        "tokens": 0,
-                        "tokens_per_sec": 0,
-                        "quality_score": 0,
-                        "ttft_ms": 0,
-                        "ram_delta_mb": 0,
+                        "tokens": 0, "tokens_per_sec": 0,
+                        "quality_score": 0, "ttft_ms": 0, "ram_delta_mb": 0,
+                        "model_size_mb": model_size_mb, "efficiency": 0,
+                        "response_chars": 0,
                     }
+                    print(f"  [model-{model_idx}] {model_name} ERROR: {exc}", flush=True)
+                    return result
+
+            # Launch all models via ThreadPoolExecutor
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(total_models, 6)
+            ) as pool:
+                futures = {
+                    pool.submit(_thread_infer, idx, path): idx
+                    for idx, path in enumerate(safe_models)
+                }
+
+                # As each model completes, send its result immediately via SSE
+                for fut in concurrent.futures.as_completed(futures):
+                    result = fut.result()
                     responses.append(result)
-                    _sse("model_done", result)
-                finally:
-                    try:
-                        del llm
-                    except Exception:
-                        pass
-                    gc.collect()
+                    idx = futures[fut]
+                    # Send the full response text as a single SSE "token" event
+                    # so the card fills in instantly
+                    _sse("token", {
+                        "model": result["model"],
+                        "model_index": idx,
+                        "token": result.get("response", ""),
+                        "token_count": result.get("tokens", 0),
+                        "elapsed_ms": round(result.get("time_ms", 0)),
+                    })
+                    _sse("model_done", {**result, "model_index": idx})
+
+            dispatch_wall = time.time() - _dispatch_t0
+            print(f"[compare] All {total_models} models done in {dispatch_wall:.1f}s wall-clock", flush=True)
+
+            # Restore original model order
+            responses.sort(
+                key=lambda r: next(
+                    (i for i, p in enumerate(safe_models) if p == r.get("model_path")), 99
+                )
+            )
 
             # Judge scoring
             if judge_model and local_models:
@@ -1284,33 +1387,22 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 for p in model_paths
             ]
 
-        import gc
-
-        results = []
-        for path in model_paths:
+        def _run_one(path: str) -> dict:
             model_name = os.path.basename(path).replace(".gguf", "")
+            model_size_mb = round(os.path.getsize(path) / (1024 * 1024)) if os.path.exists(path) else 0
             print(
                 f"[compare] ▶ {model_name}  ctx={n_ctx}  max_tokens={max_tokens}  temp={temperature}"
             )
             t0 = time.time()
-            llm = None
             ram_before = (
                 (proc.memory_info().rss // (1024 * 1024))
                 if (HAS_PSUTIL and proc is not None)
                 else 0  # type: ignore[union-attr]
             )
             try:
-                llm = llama_cpp.Llama(
-                    model_path=path,
-                    n_ctx=n_ctx,
-                    n_threads=os.cpu_count() or 4,
-                    n_gpu_layers=-1,  # use GPU layers if available, else 0
-                    verbose=False,
-                )
-                # ── Streaming to capture TTFT ─────────────────────────────
-                ttft_ms = 0.0
-                chunks: list[str] = []
-                for chunk in llm.create_chat_completion(
+                llm = _get_or_load_model(path, n_ctx)
+                # stream=False → entire C++ compute runs with GIL released
+                out = llm.create_chat_completion(
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt},
@@ -1319,23 +1411,16 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                     temperature=temperature,
                     top_p=top_p,
                     repeat_penalty=repeat_penalty,
-                    stream=True,
-                ):
-                    delta = chunk["choices"][0].get("delta", {}).get("content", "")  # type: ignore[index]
-                    if delta:
-                        if not ttft_ms:
-                            ttft_ms = (time.time() - t0) * 1000
-                        chunks.append(delta)
-                    # Enforce per-model inference timeout
-                    if (time.time() - t0) > inference_timeout:
-                        chunks.append("\n\n[⏱ Inference timed out]")
-                        break
+                    stream=False,
+                )
 
                 elapsed_ms = (time.time() - t0) * 1000
-                response_text = "".join(chunks)
-                # Use actual tokenizer for accurate token count
-                completion_tokens = max(1, count_tokens(response_text))
+                response_text = out["choices"][0]["message"]["content"] or ""
+                completion_tokens = out.get("usage", {}).get("completion_tokens", 0)
+                if not completion_tokens:
+                    completion_tokens = max(1, count_tokens(response_text))
                 tps = completion_tokens / (elapsed_ms / 1000) if elapsed_ms > 0 else 0
+                ttft_ms = elapsed_ms / max(completion_tokens, 1)
 
                 ram_after = (
                     (proc.memory_info().rss // (1024 * 1024))
@@ -1344,56 +1429,76 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 )
                 ram_delta = max(0, ram_after - ram_before)
 
+                model_size_gb = model_size_mb / 1024 if model_size_mb else 0
+                efficiency = round(tps / model_size_gb, 2) if model_size_gb > 0 else 0
+
                 print(
-                    f"[compare] ✅ {model_name}  {elapsed_ms:.0f}ms  ttft={ttft_ms:.0f}ms  {completion_tokens}tok  {tps:.1f}t/s  ram+{ram_delta}MB"
+                    f"[compare] ✅ {model_name}  {elapsed_ms:.0f}ms  {completion_tokens}tok  {tps:.1f}t/s  eff={efficiency:.1f}t/s/GB  ram+{ram_delta}MB"
                 )
-                results.append(
-                    {
-                        "model": model_name,
-                        "model_path": path,
-                        "path": path,
-                        "response": response_text,
-                        "time_ms": round(elapsed_ms, 1),
-                        "tokens": completion_tokens,
-                        "tokens_per_sec": round(tps, 1),
-                        "quality_score": 0,
-                        "ttft_ms": round(ttft_ms, 1),
-                        "ram_delta_mb": ram_delta,
-                    }
-                )
+                return {
+                    "model": model_name,
+                    "model_path": path,
+                    "path": path,
+                    "response": response_text,
+                    "time_ms": round(elapsed_ms, 1),
+                    "tokens": completion_tokens,
+                    "tokens_per_sec": round(tps, 1),
+                    "quality_score": 0,
+                    "ttft_ms": round(ttft_ms, 1),
+                    "ram_delta_mb": ram_delta,
+                    "prompt_tokens": out.get("usage", {}).get("prompt_tokens", 0),
+                    "model_size_mb": model_size_mb,
+                    "efficiency": efficiency,
+                    "response_chars": len(response_text),
+                }
             except Exception as exc:
                 elapsed_ms = (time.time() - t0) * 1000
                 print(f"[compare] ERROR {model_name}: {exc}")
-                results.append(
-                    {
-                        "model": model_name,
-                        "model_path": path,
-                        "path": path,
-                        "response": f"❌ Error loading/running model: {exc}",
-                        "error": str(exc),
-                        "time_ms": round(elapsed_ms, 1),
-                        "tokens": 0,
-                        "tokens_per_sec": 0,
-                        "quality_score": 0,
-                        "ttft_ms": 0,
-                        "ram_delta_mb": 0,
-                    }
-                )
-            finally:
-                try:
-                    del llm
-                except Exception:
-                    pass
-                gc.collect()  # free model memory before loading next one
+                return {
+                    "model": model_name,
+                    "model_path": path,
+                    "path": path,
+                    "response": f"❌ Error loading/running model: {exc}",
+                    "error": str(exc),
+                    "time_ms": round(elapsed_ms, 1),
+                    "tokens": 0,
+                    "tokens_per_sec": 0,
+                    "quality_score": 0,
+                    "ttft_ms": 0,
+                    "ram_delta_mb": 0,
+                    "model_size_mb": model_size_mb,
+                    "efficiency": 0,
+                    "response_chars": 0,
+                }
+
+        # Pre-load all models into cache first
+        print(f"[compare] Pre-loading {len(model_paths)} model(s)…", flush=True)
+        for path in model_paths:
+            _get_or_load_model(path, n_ctx)
+
+        # Run all models in parallel via ThreadPoolExecutor
+        print(f"[compare] Dispatching to {len(model_paths)} model(s) in parallel…", flush=True)
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(len(model_paths), 6)
+        ) as pool:
+            futures = {pool.submit(_run_one, p): p for p in model_paths}
+            results = []
+            for fut in concurrent.futures.as_completed(futures):
+                results.append(fut.result())
+
+        # Restore original model order
+        path_order = {p: i for i, p in enumerate(model_paths)}
+        results.sort(key=lambda r: path_order.get(r.get("model_path", ""), 99))
         return results
 
     def _resolve_judge_path(self, judge_model: str, local_models: list[str]) -> str | None:
         """Return the filesystem path to use as judge model."""
         if judge_model == "local:best":
-            # Pick largest model file available (heuristic: bigger = smarter)
-            best = max(
+            # Pick smallest model — the judge task is simple (scoring/comparing)
+            # so we use the lightest model for speed.
+            best = min(
                 local_models,
-                key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0,
+                key=lambda p: os.path.getsize(p) if os.path.exists(p) else float("inf"),
                 default=None,
             )
             return best
@@ -1434,13 +1539,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         print(f"[judge] Loading {judge_name}…")
         llm = None
         try:
-            llm = llama_cpp.Llama(
-                model_path=judge_path,
-                n_ctx=min(params.get("n_ctx", 4096), 8192),
-                n_threads=os.cpu_count() or 4,
-                n_gpu_layers=-1,
-                verbose=False,
-            )
+            llm = _get_or_load_model(judge_path, min(params.get("n_ctx", 4096), 8192))
 
             # Build randomised context preambles per response to mitigate
             # position bias.  Each response gets two evaluations: one with a
@@ -1564,13 +1663,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
 
             import llama_cpp
 
-            llm = llama_cpp.Llama(
-                model_path=model_path,
-                n_ctx=4096,
-                n_threads=os.cpu_count() or 4,
-                n_gpu_layers=-1,
-                verbose=False,
-            )
+            llm = _get_or_load_model(model_path, 4096)
             full_messages = [{"role": "system", "content": system}] + messages
             out = llm.create_chat_completion(
                 full_messages,
@@ -1579,8 +1672,6 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 stream=False,
             )
             reply = out["choices"][0]["message"]["content"]  # type: ignore[index]
-            del llm
-            gc.collect()
             self._send_json(200, {"response": reply})
         except Exception as e:
             self._send_json(500, {"error": str(e)})
