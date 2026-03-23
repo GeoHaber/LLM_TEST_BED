@@ -862,6 +862,10 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             })
         elif self.path.startswith("/__discover-models"):
             self._handle_discover_models()
+        elif self.path.startswith("/__scout"):
+            self._handle_scout()
+        elif self.path.startswith("/__tool-ecosystem"):
+            self._handle_tool_ecosystem()
         elif self.path.startswith("/__download-status"):
             self._handle_download_status()
         elif self.path.startswith("/__install-status"):
@@ -1772,6 +1776,27 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         results = _discover_hf_models(query, sort, limit)
         self._send_json(200, {"models": results, "cached": bool(_discovery_cache)})
 
+    def _handle_scout(self) -> None:
+        """GET /__scout?category=all&limit=20 — Internet Scout for new models."""
+        qs = parse_qs(urlparse(self.path).query)
+        category = qs.get("category", ["all"])[0][:50]
+        try:
+            limit = min(int(qs.get("limit", ["20"])[0]), 60)
+        except (ValueError, TypeError):
+            limit = 20
+        results = _scout_hf_trending(category, limit)
+        self._send_json(200, {
+            "models": results,
+            "category": category,
+            "categories": {k: {"icon": v["icon"], "desc": v["desc"]}
+                          for k, v in _TOOL_CATEGORIES.items()},
+        })
+
+    def _handle_tool_ecosystem(self) -> None:
+        """GET /__tool-ecosystem — Discover AI tool categories with top models."""
+        ecosystem = _scout_tool_ecosystem()
+        self._send_json(200, ecosystem)
+
     def _cors_headers(self) -> None:
         origin = self.headers.get("Origin", "")
         # Allow localhost origins (any port), file:// (null), and empty (same-origin)
@@ -1926,6 +1951,150 @@ def _run_install(job_id: str, pip_cmd: str) -> None:
     except Exception as exc:
         _upd(state="error", error=str(exc), log=f"ERROR: {exc}")
         print(f"[install] {job_id} EXCEPTION: {exc}")
+
+
+# ─ Internet Scout ────────────────────────────────────────────────────────────
+# Scours HuggingFace for new high-quality GGUF models and relevant AI tools
+# that could enhance the user's workflow (voice, OCR, formatting, etc.).
+
+_SCOUT_CACHE: dict[str, dict] = {}          # key → {ts, data}
+_SCOUT_TTL = 600                             # 10-minute cache
+_scout_lock = threading.Lock()
+
+# Categories of tools the scout searches for
+_TOOL_CATEGORIES = {
+    "voice":     {"search": "whisper speech-to-text voice GGUF", "icon": "🎙️", "desc": "Voice/Speech-to-Text"},
+    "ocr":       {"search": "OCR document extraction GGUF",      "icon": "📷", "desc": "OCR & Document Understanding"},
+    "vision":    {"search": "vision multimodal image GGUF",      "icon": "👁️", "desc": "Vision & Image Understanding"},
+    "embedding": {"search": "embedding sentence-similarity GGUF","icon": "🔗", "desc": "Embeddings & Retrieval"},
+    "code":      {"search": "code generation programming GGUF",  "icon": "💻", "desc": "Code Generation"},
+    "agent":     {"search": "function-calling agent tool-use GGUF","icon":"🤖","desc": "Agents & Tool Use"},
+    "translate": {"search": "translation multilingual GGUF",     "icon": "🌍", "desc": "Translation & Multilingual"},
+    "reasoning": {"search": "reasoning math logic GGUF",         "icon": "🧠", "desc": "Reasoning & Math"},
+    "medical":   {"search": "medical clinical biomedical GGUF",  "icon": "🏥", "desc": "Medical & Clinical"},
+    "small":     {"search": "small tiny efficient edge GGUF",    "icon": "⚡", "desc": "Small & Efficient"},
+}
+
+
+def _scout_hf_trending(category: str = "all", limit: int = 20) -> list[dict]:
+    """Discover trending GGUF models on HuggingFace, optionally filtered."""
+    cache_key = f"scout|{category}|{limit}"
+    with _scout_lock:
+        cached = _SCOUT_CACHE.get(cache_key)
+        if cached and time.time() - cached["ts"] < _SCOUT_TTL:
+            return cached["data"]
+
+    results: list[dict] = []
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi()
+
+        if category != "all" and category in _TOOL_CATEGORIES:
+            search_q = _TOOL_CATEGORIES[category]["search"]
+        else:
+            search_q = "GGUF"
+
+        raw = list(api.list_models(
+            search=search_q,
+            filter="gguf",
+            sort="trendingScore",
+            limit=min(limit, 60),
+        ))
+
+        for m in raw:
+            author = (m.id or "").split("/")[0] if "/" in (m.id or "") else ""
+            tags = list(getattr(m, "tags", []) or [])
+            downloads = getattr(m, "downloads", 0) or 0
+            likes = getattr(m, "likes", 0) or 0
+            pipeline = getattr(m, "pipeline_tag", "") or ""
+
+            # Auto-classify capabilities from tags
+            caps = []
+            tag_str = " ".join(tags).lower()
+            if any(k in tag_str for k in ("code", "starcoder", "codellama", "deepseek-coder")):
+                caps.append("code")
+            if any(k in tag_str for k in ("medical", "bio", "clinical", "med")):
+                caps.append("medical")
+            if any(k in tag_str for k in ("vision", "multimodal", "image", "llava")):
+                caps.append("vision")
+            if any(k in tag_str for k in ("embedding", "sentence", "retrieval")):
+                caps.append("embedding")
+            if any(k in tag_str for k in ("whisper", "speech", "voice", "audio")):
+                caps.append("voice")
+            if any(k in tag_str for k in ("math", "reason", "logic")):
+                caps.append("reasoning")
+            if any(k in tag_str for k in ("translation", "multilingual", "nllb")):
+                caps.append("translate")
+            if any(k in tag_str for k in ("function", "tool", "agent")):
+                caps.append("agent")
+            if not caps:
+                caps.append("chat")
+
+            results.append({
+                "id": m.id,
+                "author": author,
+                "trusted": author in _TRUSTED_QUANTIZERS,
+                "downloads": downloads,
+                "likes": likes,
+                "lastModified": str(getattr(m, "last_modified", "") or ""),
+                "tags": tags,
+                "pipeline": pipeline,
+                "capabilities": caps,
+                "trending_score": getattr(m, "trending_score", 0) or 0,
+            })
+
+        with _scout_lock:
+            _SCOUT_CACHE[cache_key] = {"ts": time.time(), "data": results}
+        return results
+
+    except Exception as exc:
+        return [{"error": f"Scout failed: {exc}"}]
+
+
+def _scout_tool_ecosystem() -> dict:
+    """Return curated list of AI tool categories with HF trending models."""
+    ecosystem: dict[str, dict] = {}
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi()
+
+        for cat_key, cat_info in _TOOL_CATEGORIES.items():
+            try:
+                raw = list(api.list_models(
+                    search=cat_info["search"],
+                    filter="gguf",
+                    sort="trendingScore",
+                    limit=5,
+                ))
+                models = []
+                for m in raw:
+                    author = (m.id or "").split("/")[0] if "/" in (m.id or "") else ""
+                    models.append({
+                        "id": m.id,
+                        "author": author,
+                        "trusted": author in _TRUSTED_QUANTIZERS,
+                        "downloads": getattr(m, "downloads", 0) or 0,
+                        "likes": getattr(m, "likes", 0) or 0,
+                    })
+                ecosystem[cat_key] = {
+                    "icon": cat_info["icon"],
+                    "desc": cat_info["desc"],
+                    "top_models": models,
+                    "count": len(raw),
+                }
+            except Exception:
+                ecosystem[cat_key] = {
+                    "icon": cat_info["icon"],
+                    "desc": cat_info["desc"],
+                    "top_models": [],
+                    "count": 0,
+                    "error": "search failed",
+                }
+        return ecosystem
+    except ImportError:
+        return {"error": "huggingface_hub not installed"}
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 def run_server(port: int = 8123) -> None:

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Test LLMs</title>
+<title>⚔ The Proving Ground — LLM Battle Forge</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -156,9 +156,77 @@ body { font-family: 'Inter', sans-serif; }
 #zOvInput:focus{border-color:#6366f1;box-shadow:0 0 0 2px rgba(99,102,241,.12)}
 .dark #zOvInput:focus{border-color:#818cf8;box-shadow:0 0 0 2px rgba(99,102,241,.15)}
 #zOvInput::placeholder{color:#94a3b8}
+
+/* ═══ PROVING GROUND ADDITIONS ═══ */
+
+/* Toast notifications */
+#toastContainer{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:420px}
+.toast{pointer-events:auto;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;font-size:12px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.15);backdrop-filter:blur(12px);animation:toastIn .3s cubic-bezier(.34,1.56,.64,1)}
+.toast.toast-success{background:rgba(5,150,105,.95);color:#fff}
+.toast.toast-error{background:rgba(220,38,38,.95);color:#fff}
+.toast.toast-warning{background:rgba(245,158,11,.95);color:#fff}
+.toast.toast-info{background:rgba(99,102,241,.95);color:#fff}
+.toast.toast-out{animation:toastOut .3s ease forwards}
+@keyframes toastIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{to{opacity:0;transform:translateX(40px)}}
+
+/* Terrain tabs */
+.terrain-tab{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 12px;border-radius:10px;cursor:pointer;transition:all .2s;border:1.5px solid transparent;min-width:64px;position:relative}
+.terrain-tab:hover{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.2)}
+.terrain-tab.active{background:rgba(99,102,241,.12);border-color:#6366f1;box-shadow:0 2px 8px rgba(99,102,241,.2)}
+.terrain-tab .t-icon{font-size:18px;line-height:1}
+.terrain-tab .t-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#64748b}
+.terrain-tab.active .t-label{color:#6366f1}
+.terrain-tab .t-count{position:absolute;top:2px;right:4px;font-size:8px;font-weight:800;background:#6366f1;color:#fff;border-radius:999px;padding:0 4px;min-width:14px;text-align:center}
+
+/* Podium reveal */
+.podium-card{border-radius:16px;padding:20px;position:relative;overflow:hidden;transition:all .3s}
+.podium-card.winner{border:2px solid #f59e0b;box-shadow:0 0 30px rgba(245,158,11,.2)}
+.podium-card.winner::before{content:'🏆';position:absolute;top:8px;right:12px;font-size:28px;opacity:.8}
+.podium-card.runner-up{border:2px solid #94a3b8;opacity:.85}
+
+/* Readiness bar */
+.readiness-bar{height:6px;border-radius:999px;background:#1e293b;overflow:hidden;position:relative}
+.readiness-fill{height:100%;border-radius:999px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+.readiness-fill.high{background:linear-gradient(90deg,#10b981,#059669)}
+.readiness-fill.mid{background:linear-gradient(90deg,#f59e0b,#d97706)}
+.readiness-fill.low{background:linear-gradient(90deg,#ef4444,#dc2626)}
+
+/* Race progress bars */
+.race-bar{position:relative;height:24px;border-radius:12px;background:rgba(30,41,59,.5);overflow:hidden;margin:4px 0}
+.race-fill{height:100%;border-radius:12px;transition:width .15s linear;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:10px;font-weight:800;color:#fff;min-width:20px}
+.race-bar.finished .race-fill{background:linear-gradient(90deg,#10b981,#059669)!important}
+
+/* Debrief cards */
+.debrief-card{border-radius:14px;overflow:hidden;background:rgba(255,255,255,.8);backdrop-filter:blur(8px);border:1px solid rgba(226,232,240,.5);transition:all .2s}
+.dark .debrief-card{background:rgba(15,23,42,.65);border-color:rgba(30,41,59,.5)}
+.debrief-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.1)}
+
+/* Strategic implications */
+.strat-implication{display:flex;align-items:flex-start;gap:8px;padding:8px 12px;border-radius:10px;font-size:11px;line-height:1.5}
+.strat-implication.positive{background:rgba(16,185,129,.08);border-left:3px solid #10b981}
+.strat-implication.warning{background:rgba(245,158,11,.08);border-left:3px solid #f59e0b}
+.strat-implication.negative{background:rgba(239,68,68,.08);border-left:3px solid #ef4444}
+.strat-implication.info{background:rgba(99,102,241,.08);border-left:3px solid #6366f1}
+
+/* Scout panel */
+.scout-card{border-radius:12px;padding:14px;border:1.5px solid rgba(226,232,240,.5);background:rgba(255,255,255,.6);transition:all .2s;cursor:pointer}
+.dark .scout-card{background:rgba(15,23,42,.5);border-color:rgba(30,41,59,.5)}
+.scout-card:hover{border-color:#6366f1;transform:translateY(-2px);box-shadow:0 6px 20px rgba(99,102,241,.12)}
+
+/* Tab panel toggle */
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* Winner glow animation */
+@keyframes winnerGlow{0%,100%{box-shadow:0 0 20px rgba(245,158,11,.2)}50%{box-shadow:0 0 40px rgba(245,158,11,.4)}}
+.winner-glow{animation:winnerGlow 2s ease infinite}
 </style>
 </head>
 <body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display h-screen flex flex-col overflow-hidden grid-pattern">
+
+<!-- Toast Container -->
+<div id="toastContainer"></div>
 
 <!-- ═══════════════════ TOP NAV ═══════════════════ -->
 <header class="h-12 shrink-0 border-b border-slate-200/60 dark:border-border-dark/60 bg-white/80 dark:bg-background-dark/80 backdrop-blur-xl flex items-center justify-between px-5 z-40">
@@ -167,8 +235,8 @@ body { font-family: 'Inter', sans-serif; }
     <div class="flex items-center gap-2.5 shrink-0">
       <img src="zena_256x256.png" alt="Zena" class="w-8 h-8 rounded-xl object-cover border-2 border-primary/40 shadow-lg shadow-primary/20 shrink-0" onerror="this.onerror=null;this.src=typeof _ZENA_B64!=='undefined'?_ZENA_B64:'';">
       <h1 class="text-sm font-extrabold tracking-tighter hidden sm:flex items-baseline gap-0.5">
-        <span class="text-primary">Test</span><span class="text-emerald-500">LLMs</span>
-        <span class="ml-1.5 text-[9px] font-bold tracking-widest text-slate-400 uppercase">v2.4</span>
+        <span class="text-primary">⚔ Proving</span><span class="text-emerald-500">Ground</span>
+        <span class="ml-1.5 text-[9px] font-bold tracking-widest text-slate-400 uppercase">v3.0</span>
       </h1>
     </div>
     <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block"></div>
@@ -201,6 +269,53 @@ body { font-family: 'Inter', sans-serif; }
   </div>
 </header>
 
+<!-- ═══════════════════ TERRAIN NAVIGATION ═══════════════════ -->
+<div id="terrainNav" class="shrink-0 border-b border-slate-200/60 dark:border-border-dark/60 bg-white/60 dark:bg-background-dark/60 backdrop-blur-lg px-4 py-2 flex items-center gap-2 overflow-x-auto z-30">
+  <div class="terrain-tab active" onclick="selectTerrain('all')" data-terrain="all">
+    <span class="t-icon">⚔️</span>
+    <span class="t-label">All</span>
+  </div>
+  <div class="terrain-tab" onclick="selectTerrain('medical')" data-terrain="medical">
+    <span class="t-icon">🏥</span>
+    <span class="t-label">Medical</span>
+    <span class="t-count" id="tc-medical" style="display:none">0</span>
+  </div>
+  <div class="terrain-tab" onclick="selectTerrain('code')" data-terrain="code">
+    <span class="t-icon">💻</span>
+    <span class="t-label">Code</span>
+    <span class="t-count" id="tc-code" style="display:none">0</span>
+  </div>
+  <div class="terrain-tab" onclick="selectTerrain('reasoning')" data-terrain="reasoning">
+    <span class="t-icon">🧠</span>
+    <span class="t-label">Reasoning</span>
+    <span class="t-count" id="tc-reasoning" style="display:none">0</span>
+  </div>
+  <div class="terrain-tab" onclick="selectTerrain('speed')" data-terrain="speed">
+    <span class="t-icon">⚡</span>
+    <span class="t-label">Speed</span>
+    <span class="t-count" id="tc-speed" style="display:none">0</span>
+  </div>
+  <div class="terrain-tab" onclick="selectTerrain('multilingual')" data-terrain="multilingual">
+    <span class="t-icon">🌍</span>
+    <span class="t-label">Polyglot</span>
+    <span class="t-count" id="tc-multilingual" style="display:none">0</span>
+  </div>
+  <div class="terrain-tab" onclick="selectTerrain('adversarial')" data-terrain="adversarial">
+    <span class="t-icon">🛡️</span>
+    <span class="t-label">Adversarial</span>
+    <span class="t-count" id="tc-adversarial" style="display:none">0</span>
+  </div>
+  <div class="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1 shrink-0"></div>
+  <div class="terrain-tab" onclick="selectTerrain('scout')" data-terrain="scout">
+    <span class="t-icon">🔭</span>
+    <span class="t-label">Scout</span>
+  </div>
+  <div class="terrain-tab" onclick="selectTerrain('matrix')" data-terrain="matrix">
+    <span class="t-icon">📊</span>
+    <span class="t-label">Deploy Matrix</span>
+  </div>
+</div>
+
 <div class="flex flex-1 overflow-hidden">
 
 <!-- ═══════════════════ LEFT SIDEBAR ═══════════════════ -->
@@ -218,9 +333,9 @@ body { font-family: 'Inter', sans-serif; }
   <div class="panel-header">
     <div class="flex items-center gap-1.5">
       <span class="material-symbols-outlined" style="font-size:11px;">database</span>
-      MODEL LIBRARY
+      WAR ROOM
     </div>
-    <button onclick="openDownloadModal()" class="text-primary hover:underline" style="font-size:9px;">+ Download</button>
+    <button onclick="openDownloadModal()" class="text-primary hover:underline" style="font-size:9px;">⚔ Recruit</button>
   </div>
   <div class="px-2 py-1.5 border-b border-slate-200 dark:border-border-dark">
     <div class="relative">
@@ -303,12 +418,31 @@ body { font-family: 'Inter', sans-serif; }
 <!-- ═══════════════════ MAIN WORKBENCH ═══════════════════ -->
 <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
 
+  <!-- Scout Panel (hidden tab) -->
+  <div id="scoutPanel" class="tab-panel flex-1 overflow-auto bg-slate-50/80 dark:bg-slate-950/80">
+    <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
+      <span style="font-size:48px;opacity:.2;">🔭</span>
+      <p class="text-sm font-semibold">Click to scout the frontier</p>
+    </div>
+  </div>
+
+  <!-- Deployment Matrix Panel (hidden tab) -->
+  <div id="matrixPanel" class="tab-panel flex-1 overflow-auto bg-slate-50/80 dark:bg-slate-950/80">
+    <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
+      <span style="font-size:48px;opacity:.2;">📊</span>
+      <p class="text-sm font-semibold">Run battles to build the deployment matrix</p>
+    </div>
+  </div>
+
+  <!-- Normal Content (main workbench) -->
+  <div id="normalContent" class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
   <!-- Top row: metrics + judge + file picker -->
   <div class="flex shrink-0 border-b border-slate-200 dark:border-border-dark bg-white dark:bg-background-dark/60 overflow-x-auto">
 
     <!-- Metric: Speed -->
     <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">AVG TOK/S</div>
+      <div class="panel-header">⚡ COMBAT SPEED</div>
       <div class="p-2.5">
         <div class="flex items-end justify-between mb-1.5">
           <span class="text-base font-bold" id="metricSpeed">—</span>
@@ -326,7 +460,7 @@ body { font-family: 'Inter', sans-serif; }
 
     <!-- Metric: Quality -->
     <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">QUALITY</div>
+      <div class="panel-header">⭐ BATTLE SCORE</div>
       <div class="p-2.5">
         <div class="flex items-end justify-between mb-1.5">
           <span class="text-base font-bold" id="metricQuality">—</span>
@@ -340,7 +474,7 @@ body { font-family: 'Inter', sans-serif; }
 
     <!-- Metric: First Token -->
     <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">FIRST TOKEN</div>
+      <div class="panel-header">🎯 REACTION TIME</div>
       <div class="p-2.5">
         <span class="text-base font-bold" id="metricTTFT">—</span>
         <p class="text-[9px] text-slate-400 mt-0.5">avg latency</p>
@@ -349,7 +483,7 @@ body { font-family: 'Inter', sans-serif; }
 
     <!-- Metric: Peak RAM -->
     <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">PEAK RAM</div>
+      <div class="panel-header">💪 WEIGHT CLASS</div>
       <div class="p-2.5">
         <span class="text-base font-bold" id="metricMem">—</span>
         <p class="text-[9px] text-slate-400 mt-0.5">avg MB used</p>
@@ -358,7 +492,7 @@ body { font-family: 'Inter', sans-serif; }
 
     <!-- Metric: Fastest -->
     <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">FASTEST</div>
+      <div class="panel-header">🏆 CHAMPION</div>
       <div class="p-2.5">
         <span class="text-base font-bold" id="metricFastest">—</span>
         <p class="text-[9px] text-slate-400 mt-0.5">total time</p>
@@ -431,14 +565,14 @@ body { font-family: 'Inter', sans-serif; }
   <!-- Results table (main area) -->
   <div class="flex-1 overflow-auto bg-slate-50/80 dark:bg-slate-950/80">
     <div id="resultsPlaceholder" class="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
-      <span class="material-symbols-outlined" style="font-size:48px;opacity:.2;">bolt</span>
-      <p class="text-sm font-semibold tracking-wide">Select models · enter a prompt · hit Run</p>
-      <p class="text-xs text-slate-400/60">Results will appear here</p>
+      <span class="material-symbols-outlined" style="font-size:48px;opacity:.2;">swords</span>
+      <p class="text-sm font-semibold tracking-wide">Select combatants · choose your terrain · ENGAGE</p>
+      <p class="text-xs text-slate-400/60">Battle debrief will appear here</p>
     </div>
     <div id="resultsSection" class="hidden">
       <div class="workbench-panel mx-0 border-0 border-b border-slate-200 dark:border-slate-800" style="border-radius:0;">
         <div class="panel-header">
-          <span>COMPARATIVE PERFORMANCE</span>
+          <span>⚔ BATTLE DEBRIEF</span>
           <div class="flex items-center gap-3">
             <button onclick="_shareReport()" class="flex items-center gap-1 text-primary hover:text-primary/80 text-[11px] font-bold">
               SHARE <span class="material-symbols-outlined" style="font-size:11px;">share</span>
@@ -478,7 +612,7 @@ body { font-family: 'Inter', sans-serif; }
       <div class="workbench-panel mx-0 border-0 border-t border-slate-200 dark:border-slate-800" style="border-radius:0;">
         <div class="panel-header">
           <div class="flex items-center gap-3">
-            <span>ELO LEADERBOARD</span>
+            <span>🏆 CHAMPIONSHIP STANDINGS</span>
             <button onclick="_toggleHistoryView()" id="histToggleBtn" class="text-primary hover:text-primary/80 text-[10px] font-bold uppercase">Show History</button>
           </div>
           <button onclick="_clearHistory()" class="text-[10px] text-slate-400 hover:text-red-500 font-bold">CLEAR</button>
@@ -516,16 +650,16 @@ body { font-family: 'Inter', sans-serif; }
         <button id="runBtn" onclick="runComparison()"
           class="flex items-center gap-2 px-5 py-1.5 bg-gradient-to-r from-primary to-indigo-600 text-white rounded-xl font-extrabold shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all group text-[13px] tracking-wide">
           <span class="material-symbols-outlined group-hover:animate-pulse" style="font-size:16px;">bolt</span>
-          <span id="runBtnLabel">RUN</span>
+          <span id="runBtnLabel">⚔ ENGAGE</span>
         </button>
         <button id="monkeyBtn" onclick="runMonkey()" title="Monkey Mode: randomly pick models + question and run!"
           class="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-bold shadow-md shadow-amber-400/20 hover:shadow-lg hover:shadow-amber-400/30 hover:scale-[1.02] active:scale-95 transition-all text-[11px]">
           <span style="font-size:14px;line-height:1;">🐒</span>
-          <span id="monkeyBtnLabel" class="tracking-wide">RANDOM</span>
+          <span id="monkeyBtnLabel" class="tracking-wide">SURPRISE</span>
         </button>
         <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
         <span class="flex items-center gap-1.5 text-primary font-bold text-[11px]">
-          <span class="material-symbols-outlined" style="font-size:12px;">terminal</span> CONSOLE
+          <span class="material-symbols-outlined" style="font-size:12px;">target</span> MISSION BRIEFING
         </span>
         <div class="flex gap-1.5" id="activeChipRow"></div>
       </div>
@@ -542,7 +676,7 @@ body { font-family: 'Inter', sans-serif; }
       <div class="flex-1 flex flex-col gap-1.5">
         <!-- Question bank topic picker -->
         <div class="flex items-center gap-1.5 flex-wrap">
-          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Questions:</span>
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Challenges:</span>
           <button onclick="loadQuestion('random')" class="qpill">🎲 Random</button>
           <button onclick="loadQuestion('ops')" class="qpill">🏥 Hospital Ops</button>
           <button onclick="loadQuestion('emergency')" class="qpill">🚨 Emergency</button>
@@ -553,7 +687,7 @@ body { font-family: 'Inter', sans-serif; }
         </div>
         <!-- Preset scenario cards -->
         <div class="flex items-center gap-1.5 flex-wrap">
-          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Scenarios:</span>
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Battle Terrains:</span>
           <button onclick="loadScenario('clinical_triage')" class="qpill" title="Emergency triage scenario: medical questions, clinical judge, low temperature">🏥 Clinical Triage</button>
           <button onclick="loadScenario('code_review')" class="qpill" title="Code review: coding prompts, code judge, temp 0.1, 1024 tokens">💻 Code Review</button>
           <button onclick="loadScenario('math_olympiad')" class="qpill" title="Hard reasoning: math puzzles, reasoning judge, temp 0, 2048 tokens, 30min timeout">🧮 Math Olympiad</button>
@@ -641,6 +775,7 @@ body { font-family: 'Inter', sans-serif; }
       </div>
     </div>
   </div>
+  </div><!-- /normalContent -->
 </main>
 </div>
 
@@ -734,7 +869,7 @@ body { font-family: 'Inter', sans-serif; }
       <span class="material-symbols-outlined" style="font-size:12px;">chat</span>
       Ask Zena
     </button>
-    <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">© 2026 AI LAB SYSTEMS</span>
+    <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">© 2026 THE PROVING GROUND</span>
   </div>
 </footer>
 
@@ -808,7 +943,7 @@ body { font-family: 'Inter', sans-serif; }
     <div class="flex items-center justify-between px-6 py-3.5 border-b border-slate-200 dark:border-border-dark shrink-0">
       <h2 class="font-bold text-base flex items-center gap-2">
         <span class="material-symbols-outlined text-primary" style="font-size:18px;">download</span>
-        Downloads &amp; Model Browser
+        Downloads &amp; Recruit New Combatants
       </h2>
       <button onclick="closeDownloadModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
         <span class="material-symbols-outlined" style="font-size:20px;">close</span>
@@ -1538,9 +1673,9 @@ async function runComparison() {
   clearStatus();
   const localSel  = selectedModels.filter(id => !id.startsWith('online:'));
   const onlineSel = selectedModels.filter(id =>  id.startsWith('online:')).map(id => id.replace('online:',''));
-  if (!localSel.length && !onlineSel.length) { showStatus('⚠ Select at least 1 model first', 'warning'); return; }
+  if (!localSel.length && !onlineSel.length) { showStatus('⚔ Recruit at least 1 combatant first', 'warning'); return; }
   const prompt = document.getElementById('prompt').value.trim();
-  if (!prompt) { showStatus('⚠ Enter a prompt first', 'warning'); return; }
+  if (!prompt) { showStatus('⚔ Enter a battle challenge first', 'warning'); return; }
   // Quick backend connectivity check before committing to a long inference run
   try {
     const ping = await fetch(`${BACKEND}/__system-info`, { signal: AbortSignal.timeout(3000) });
@@ -1549,7 +1684,7 @@ async function runComparison() {
     showStatus(`❌ Backend offline — start Run_me.bat first (${e.message})`, 'error');
     return;
   }
-  showStatus(`Running on ${localSel.length} local + ${onlineSel.length} cloud model(s)…`, 'info');
+  showStatus(`⚔ Deploying ${localSel.length} local + ${onlineSel.length} cloud combatant(s)…`, 'info');
   document.getElementById('runBtn').disabled = true;
   try {
     let judgeModel = document.getElementById('judgeModel').value;
@@ -1596,9 +1731,10 @@ async function runComparison() {
         prompt: body.prompt,
         responses: data.results || data.responses || [],
         judge_model: judgeModel,
+        terrain: _activeTerrain,
         timestamp: Date.now()/1000,
       });
-      showStatus('✓ Comparison complete!', 'success');
+      showStatus('✔ Battle complete — check the debrief!', 'success');
     }
   } catch(err) {
     showStatus('Error: ' + err.message, 'error');
@@ -1795,12 +1931,13 @@ function _handleStreamEvent(event, payload, judgeModel) {
         prompt: payload.prompt || document.getElementById('prompt')?.value || '',
         responses: payload.responses,
         judge_model: judgeModel,
+        terrain: _activeTerrain,
         timestamp: payload.timestamp || Date.now()/1000,
       });
     }
     if (event === 'done') {
       const totalSec = ((_streamStartTime ? Date.now() - _streamStartTime : 0) / 1000).toFixed(1);
-      showStatus(`✓ Comparison complete! Total: ${totalSec}s`, 'success');
+      showStatus(`✔ Battle complete! Total engagement: ${totalSec}s`, 'success');
     }
   }
   else if (event === 'error') {
@@ -2148,7 +2285,7 @@ async function _runBatch() {
       const responses = data.results || data.responses || [];
       allResults.push({ prompt, responses });
       displayResults(data, judgeModel);
-      _saveToHistory({ prompt, responses, judge_model: judgeModel, timestamp: Date.now()/1000 });
+      _saveToHistory({ prompt, responses, judge_model: judgeModel, terrain: _activeTerrain, timestamp: Date.now()/1000 });
     } catch (e) {
       allResults.push({ prompt, error: e.message });
     }
@@ -3901,6 +4038,428 @@ function _zOvModelChange() {
   if (bar && ov) bar.value = ov.value;
   _updateZenaChatLabel();
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ═══  PROVING GROUND — Terrain, Toast, Scout, Deploy Matrix ═══
+// ═══════════════════════════════════════════════════════════════
+
+// ─── Active terrain state ────────────────────────────────────
+let _activeTerrain = 'all';
+const _TERRAIN_MAP = {
+  all: { label:'All Terrains', icon:'⚔️', judge:'general' },
+  medical: { label:'Medical', icon:'🏥', judge:'medical', scenario:'clinical_triage', questionCat:'emergency' },
+  code: { label:'Code', icon:'💻', judge:'coding', scenario:'code_review', questionCat:'coding' },
+  reasoning: { label:'Reasoning', icon:'🧠', judge:'reasoning', scenario:'math_olympiad', questionCat:'reasoning' },
+  speed: { label:'Speed', icon:'⚡', judge:'general', scenario:'speed_test' },
+  multilingual: { label:'Polyglot', icon:'🌍', judge:'multilingual', scenario:'polyglot', questionCat:'multilingual' },
+  adversarial: { label:'Adversarial', icon:'🛡️', judge:'general', scenario:'stress_test' },
+};
+
+function selectTerrain(terrain) {
+  _activeTerrain = terrain;
+  // Update tab active states
+  document.querySelectorAll('.terrain-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.terrain === terrain);
+  });
+  // Show/hide special panels
+  const mainArea = document.querySelector('main');
+  const scoutPanel = document.getElementById('scoutPanel');
+  const matrixPanel = document.getElementById('matrixPanel');
+  const normalContent = document.getElementById('normalContent');
+  if (terrain === 'scout') {
+    if (scoutPanel) scoutPanel.classList.add('active');
+    if (matrixPanel) matrixPanel.classList.remove('active');
+    if (normalContent) normalContent.style.display = 'none';
+    _loadScoutData();
+    return;
+  }
+  if (terrain === 'matrix') {
+    if (matrixPanel) matrixPanel.classList.add('active');
+    if (scoutPanel) scoutPanel.classList.remove('active');
+    if (normalContent) normalContent.style.display = 'none';
+    _renderDeploymentMatrix();
+    return;
+  }
+  // Normal terrain — show main content
+  if (scoutPanel) scoutPanel.classList.remove('active');
+  if (matrixPanel) matrixPanel.classList.remove('active');
+  if (normalContent) normalContent.style.display = '';
+  // Apply terrain preset
+  const info = _TERRAIN_MAP[terrain];
+  if (info && terrain !== 'all') {
+    // Set judge template
+    const jt = document.getElementById('judgeTemplate');
+    if (jt && info.judge) jt.value = info.judge;
+    toast(`Terrain: ${info.icon} ${info.label} — judge & params configured`, 'info');
+  }
+  _updateTerrainBadges();
+}
+
+function _updateTerrainBadges() {
+  const hist = _loadHistory();
+  const counts = {};
+  hist.forEach(h => {
+    const t = h.terrain || 'all';
+    counts[t] = (counts[t] || 0) + 1;
+  });
+  Object.keys(_TERRAIN_MAP).forEach(t => {
+    const el = document.getElementById(`tc-${t}`);
+    if (!el) return;
+    const c = counts[t] || 0;
+    if (c > 0) { el.textContent = c; el.style.display = ''; }
+    else el.style.display = 'none';
+  });
+}
+
+// ─── Toast Notification System ───────────────────────────────
+function toast(message, type = 'info', duration = 3500) {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    document.body.appendChild(container);
+  }
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  const icons = { success:'✓', error:'✗', warning:'⚠', info:'ℹ' };
+  t.innerHTML = `<span>${icons[type]||'ℹ'}</span> <span>${message}</span>`;
+  container.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('toast-out');
+    setTimeout(() => t.remove(), 300);
+  }, duration);
+}
+
+// ─── Scout Panel ─────────────────────────────────────────────
+let _scoutData = null;
+let _scoutToolData = null;
+
+async function _loadScoutData() {
+  const panel = document.getElementById('scoutPanel');
+  if (!panel) return;
+  if (_scoutData && _scoutToolData) {
+    _renderScoutPanel();
+    return;
+  }
+  panel.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+    <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+    <p class="text-sm font-semibold">🔭 Scouting the frontier for new contenders…</p>
+  </div>`;
+  try {
+    const [scoutRes, toolRes] = await Promise.all([
+      fetch(`${BACKEND}/__scout?category=all&limit=30`).then(r => r.json()),
+      fetch(`${BACKEND}/__tool-ecosystem`).then(r => r.json()),
+    ]);
+    _scoutData = scoutRes;
+    _scoutToolData = toolRes;
+    _renderScoutPanel();
+  } catch(e) {
+    panel.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+      <span style="font-size:48px;opacity:.3;">🔭</span>
+      <p class="text-sm font-semibold">Scout unavailable</p>
+      <p class="text-xs text-slate-400/60">Backend offline or HuggingFace unreachable: ${e.message}</p>
+      <button onclick="_scoutData=null;_loadScoutData()" class="px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs font-bold hover:bg-primary/20">↻ Retry</button>
+    </div>`;
+  }
+}
+
+function _renderScoutPanel() {
+  const panel = document.getElementById('scoutPanel');
+  if (!panel) return;
+  const models = _scoutData?.models || _scoutData?.results || [];
+  const tools = _scoutToolData?.categories || _scoutToolData?.tools || {};
+  const toolEntries = typeof tools === 'object' && !Array.isArray(tools) ? Object.entries(tools) : [];
+
+  let html = `<div class="p-4 space-y-6 overflow-y-auto" style="max-height:calc(100vh - 200px);">`;
+  // Header
+  html += `<div class="flex items-center justify-between">
+    <div>
+      <h2 class="text-lg font-extrabold text-primary flex items-center gap-2">🔭 Frontier Scout</h2>
+      <p class="text-xs text-slate-400 mt-1">Trending GGUF models & AI tools from HuggingFace</p>
+    </div>
+    <button onclick="_scoutData=null;_scoutToolData=null;_loadScoutData()" class="px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs font-bold hover:bg-primary/20">↻ Refresh</button>
+  </div>`;
+
+  // Trending Models grid
+  if (models.length) {
+    html += `<div><h3 class="text-sm font-bold text-slate-300 mb-3 flex items-center gap-2">⚔️ New Contenders <span class="text-xs text-slate-500 font-normal">(${models.length} found)</span></h3>`;
+    html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">`;
+    models.slice(0, 18).forEach(m => {
+      const name = m.name || m.id || 'Unknown';
+      const size = m.size_mb ? `${(m.size_mb/1024).toFixed(1)} GB` : m.size || '?';
+      const caps = (m.capabilities || m.tags || []).slice(0,3).map(c => `<span class="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[9px] font-bold">${c}</span>`).join(' ');
+      const dl = m.downloads ? `${(m.downloads/1000).toFixed(0)}k ↓` : '';
+      const likes = m.likes ? `${m.likes} ❤` : '';
+      html += `<div class="scout-card">
+        <div class="flex items-start justify-between mb-2">
+          <span class="font-bold text-[12px] text-slate-200 truncate flex-1">${escHtml(name)}</span>
+          <span class="text-[10px] text-slate-500 shrink-0 ml-2">${size}</span>
+        </div>
+        <div class="flex items-center gap-1 flex-wrap mb-2">${caps}</div>
+        <div class="flex items-center justify-between text-[10px] text-slate-500">
+          <span>${dl} ${likes}</span>
+          <span class="text-primary font-bold cursor-pointer hover:underline" onclick="window.open('https://huggingface.co/${escHtml(m.repo_id || m.id || '')}','_blank')">View →</span>
+        </div>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // Tool Ecosystem
+  if (toolEntries.length) {
+    html += `<div><h3 class="text-sm font-bold text-slate-300 mb-3 flex items-center gap-2">🔧 Tool Ecosystem</h3>`;
+    html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-3">`;
+    toolEntries.forEach(([catName, catData]) => {
+      const items = catData.models || catData.items || catData || [];
+      if (!Array.isArray(items) || !items.length) return;
+      const icon = catData.icon || '🔧';
+      html += `<div class="scout-card">
+        <h4 class="font-bold text-[12px] text-slate-200 mb-2">${icon} ${escHtml(catName)}</h4>
+        <div class="space-y-1.5">`;
+      items.slice(0, 4).forEach(item => {
+        const iName = item.name || item.id || '';
+        const iDl = item.downloads ? `${(item.downloads/1000).toFixed(0)}k ↓` : '';
+        html += `<div class="flex items-center justify-between text-[10px]">
+          <span class="text-slate-300 truncate">${escHtml(iName)}</span>
+          <span class="text-slate-500 shrink-0 ml-2">${iDl}</span>
+        </div>`;
+      });
+      html += `</div></div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  html += `</div>`;
+  panel.innerHTML = html;
+}
+
+// ─── Deployment Matrix ───────────────────────────────────────
+function _renderDeploymentMatrix() {
+  const panel = document.getElementById('matrixPanel');
+  if (!panel) return;
+  const elo = _loadElo();
+  const hist = _loadHistory();
+  const sorted = Object.entries(elo).sort((a,b) => b[1].rating - a[1].rating);
+
+  if (!sorted.length) {
+    panel.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+      <span style="font-size:48px;opacity:.2;">📊</span>
+      <p class="text-sm font-semibold">No battle data yet</p>
+      <p class="text-xs text-slate-400/60">Run comparisons across terrains to build the deployment matrix</p>
+    </div>`;
+    return;
+  }
+
+  const terrains = Object.keys(_TERRAIN_MAP).filter(t => t !== 'all');
+  let html = `<div class="p-4 space-y-6 overflow-y-auto" style="max-height:calc(100vh - 200px);">`;
+  html += `<div>
+    <h2 class="text-lg font-extrabold text-primary flex items-center gap-2">📊 Deployment Matrix</h2>
+    <p class="text-xs text-slate-400 mt-1">Strategic overview — which model to deploy where</p>
+  </div>`;
+
+  // Overall rankings table
+  html += `<div class="overflow-x-auto">
+    <table class="w-full text-left text-[12px]">
+      <thead class="bg-slate-800/60 border-b border-slate-700">
+        <tr class="text-slate-400 uppercase text-[10px]">
+          <th class="px-3 py-2">#</th>
+          <th class="px-3 py-2">Combatant</th>
+          <th class="px-3 py-2">ELO</th>
+          <th class="px-3 py-2">W/L/D</th>
+          <th class="px-3 py-2">Avg Score</th>
+          <th class="px-3 py-2">Avg t/s</th>
+          <th class="px-3 py-2">Readiness</th>
+          <th class="px-3 py-2">Recommendation</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800/50">`;
+
+  const medals = ['🥇','🥈','🥉'];
+  sorted.forEach(([name, s], i) => {
+    const avgScore = s.games ? (s.totalScore / s.games) : 0;
+    const avgTps = s.games ? (s.totalTps / s.games) : 0;
+    const readiness = Math.min(100, Math.round((avgScore * 8 + Math.min(avgTps, 50) + s.games * 5)));
+    const readCls = readiness >= 70 ? 'high' : readiness >= 40 ? 'mid' : 'low';
+    const rec = readiness >= 70 ? '✅ Deploy' : readiness >= 40 ? '⚠️ Test more' : '❌ Not ready';
+    const ratingCls = s.rating >= 1600 ? 'text-emerald-400 font-bold' : s.rating >= 1400 ? 'text-amber-400' : 'text-red-400';
+    html += `<tr class="hover:bg-slate-800/30">
+      <td class="px-3 py-2 font-bold">${medals[i] || (i+1)}</td>
+      <td class="px-3 py-2 font-semibold text-slate-200">${escHtml(name)}</td>
+      <td class="px-3 py-2 ${ratingCls}">${s.rating}</td>
+      <td class="px-3 py-2"><span class="text-emerald-400">${s.wins}</span>/<span class="text-red-400">${s.losses}</span>/<span class="text-slate-500">${s.draws}</span></td>
+      <td class="px-3 py-2 font-mono">${avgScore.toFixed(1)}</td>
+      <td class="px-3 py-2 font-mono">${avgTps.toFixed(1)}</td>
+      <td class="px-3 py-2"><div class="readiness-bar" style="width:80px;"><div class="readiness-fill ${readCls}" style="width:${readiness}%"></div></div></td>
+      <td class="px-3 py-2 text-[10px] font-bold">${rec}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+
+  // Strategic implications from history
+  if (hist.length >= 2) {
+    html += `<div class="space-y-2">
+      <h3 class="text-sm font-bold text-slate-300">⚡ Strategic Implications</h3>`;
+    const topModel = sorted[0];
+    if (topModel) {
+      html += `<div class="strat-implication positive"><span>✦</span> <strong>${escHtml(topModel[0])}</strong> leads the rankings with ELO ${topModel[1].rating}. Recommend as primary deployment.</div>`;
+    }
+    const fastest = sorted.reduce((best, [n,s]) => {
+      const avgTps = s.games ? s.totalTps/s.games : 0;
+      return avgTps > (best.tps||0) ? {name:n, tps:avgTps} : best;
+    }, {});
+    if (fastest.name) {
+      html += `<div class="strat-implication info"><span>⚡</span> <strong>${escHtml(fastest.name)}</strong> is the speed champion at ${fastest.tps.toFixed(1)} t/s avg. Best for latency-critical tasks.</div>`;
+    }
+    if (sorted.length >= 3 && sorted[sorted.length-1][1].rating < 1400) {
+      html += `<div class="strat-implication warning"><span>⚠</span> <strong>${escHtml(sorted[sorted.length-1][0])}</strong> underperforming (ELO ${sorted[sorted.length-1][1].rating}). Consider replacing with a stronger contender.</div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  panel.innerHTML = html;
+}
+
+// ─── Proving Ground: Enhanced displayResults (Debrief + Podium) ──────────
+const _origDisplayResults = displayResults;
+displayResults = function(data, judgeModel) {
+  // Call original to populate metrics and table
+  _origDisplayResults(data, judgeModel);
+  const results = data.results || data.responses || [];
+  if (!results.length) return;
+
+  // Add terrain to history
+  const lastHist = _loadHistory();
+  if (lastHist.length > 0) {
+    const last = lastHist[lastHist.length - 1];
+    if (!last.terrain) last.terrain = _activeTerrain;
+    localStorage.setItem(_HIST_KEY, JSON.stringify(lastHist));
+  }
+
+  // Build Debrief + Podium below the table
+  const rc = document.getElementById('responseCards');
+  if (!rc) return;
+
+  // Sort by score to find winner
+  const scored = results.map((r, i) => {
+    let jd = r.judge_detail || {};
+    if (typeof jd === 'string') { try { jd = JSON.parse(jd); } catch { jd = {}; } }
+    const score = jd.overall || r.judge_score || r.quality_score || 0;
+    return { ...r, _idx: i, _score: score, _jd: jd };
+  }).sort((a, b) => b._score - a._score);
+
+  const winner = scored[0];
+  const terrain = _TERRAIN_MAP[_activeTerrain] || _TERRAIN_MAP.all;
+
+  // Build podium + debrief HTML
+  let debriefHtml = '';
+
+  // Winner announcement (only if judged)
+  if (judgeModel && scored.length >= 2) {
+    const winnerName = getModelName(winner.model_path || winner.path || '');
+    debriefHtml += `<div class="col-span-full mb-4">
+      <div class="podium-card winner winner-glow bg-gradient-to-r from-amber-900/20 to-yellow-900/20 dark:from-amber-900/30 dark:to-yellow-900/30 text-center py-6">
+        <div class="text-3xl mb-2">🏆</div>
+        <div class="text-lg font-extrabold text-amber-400">${escHtml(winnerName)}</div>
+        <div class="text-sm text-amber-300/80 mt-1">Champion of ${terrain.icon} ${terrain.label} — Score: ${winner._score.toFixed(1)}/10</div>
+        <div class="flex items-center justify-center gap-4 mt-3 text-[11px] text-slate-400">
+          <span>${(winner.tokens_per_sec||0).toFixed(1)} t/s</span>
+          <span>•</span>
+          <span>${((winner.time_ms||0)/1000).toFixed(1)}s total</span>
+          <span>•</span>
+          <span>${winner.ttft_ms ? winner.ttft_ms.toFixed(0) + 'ms TTFT' : 'N/A'}</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Debrief cards for each combatant
+  rc.style.gridTemplateColumns = scored.length <= 2 ? `repeat(${scored.length}, 1fr)` : 'repeat(auto-fill,minmax(340px,1fr))';
+  scored.forEach((r, rank) => {
+    const name = getModelName(r.model_path || r.path || '');
+    const isWinner = rank === 0 && judgeModel && scored.length >= 2;
+    const tps = (r.tokens_per_sec||0).toFixed(1);
+    const ttft = r.ttft_ms > 0 ? `${r.ttft_ms.toFixed(0)}ms` : '—';
+    const jd = r._jd || {};
+    const filled = judgeModel ? Math.round(Math.min(5, r._score / 2)) : 0;
+    const starsHtml = Array.from({length:5},(_,i) =>
+      `<span class="material-symbols-outlined ${i<filled?'fill-1':''} text-primary" style="font-size:12px;">star</span>`
+    ).join('');
+
+    // Build strengths/weaknesses if available
+    let analysisHtml = '';
+    if (jd.strengths || jd.weaknesses) {
+      analysisHtml += `<div class="mt-3 space-y-1.5 border-t border-slate-200 dark:border-slate-700 pt-3">`;
+      if (jd.strengths) {
+        const items = Array.isArray(jd.strengths) ? jd.strengths : [jd.strengths];
+        items.forEach(s => { analysisHtml += `<div class="strat-implication positive"><span>✦</span> ${escHtml(String(s))}</div>`; });
+      }
+      if (jd.weaknesses) {
+        const items = Array.isArray(jd.weaknesses) ? jd.weaknesses : [jd.weaknesses];
+        items.forEach(s => { analysisHtml += `<div class="strat-implication negative"><span>✗</span> ${escHtml(String(s))}</div>`; });
+      }
+      analysisHtml += `</div>`;
+    }
+
+    // Metrics grid
+    const metricsHtml = `<div class="grid grid-cols-4 gap-2 mt-3 text-center">
+      <div class="bg-slate-100 dark:bg-slate-800/60 rounded-lg p-2">
+        <div class="text-[9px] text-slate-500 uppercase font-bold">Speed</div>
+        <div class="text-sm font-bold text-primary">${tps}</div>
+        <div class="text-[8px] text-slate-400">t/s</div>
+      </div>
+      <div class="bg-slate-100 dark:bg-slate-800/60 rounded-lg p-2">
+        <div class="text-[9px] text-slate-500 uppercase font-bold">TTFT</div>
+        <div class="text-sm font-bold">${ttft}</div>
+      </div>
+      <div class="bg-slate-100 dark:bg-slate-800/60 rounded-lg p-2">
+        <div class="text-[9px] text-slate-500 uppercase font-bold">Time</div>
+        <div class="text-sm font-bold">${((r.time_ms||0)/1000).toFixed(1)}s</div>
+      </div>
+      <div class="bg-slate-100 dark:bg-slate-800/60 rounded-lg p-2">
+        <div class="text-[9px] text-slate-500 uppercase font-bold">Score</div>
+        <div class="text-sm font-bold ${r._score >= 7 ? 'text-emerald-400' : r._score >= 4 ? 'text-amber-400' : 'text-red-400'}">${judgeModel ? r._score.toFixed(1) : '—'}</div>
+      </div>
+    </div>`;
+
+    debriefHtml += `<div class="debrief-card ${isWinner ? 'podium-card winner' : rank === 1 ? 'podium-card runner-up' : ''}">
+      <div class="flex items-center justify-between px-4 py-3 ${isWinner ? 'bg-amber-900/20' : 'bg-slate-50 dark:bg-slate-800/60'} border-b border-slate-200 dark:border-slate-700">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">${rank === 0 ? '🥇' : rank === 1 ? '🥈' : rank === 2 ? '🥉' : '⚔️'}</span>
+          <span class="font-bold text-[13px] ${isWinner ? 'text-amber-400' : 'text-primary'}">${escHtml(name)}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          ${judgeModel ? `<div class="flex">${starsHtml}</div>` : ''}
+          <span class="font-mono text-[10px] text-slate-400">${tps} t/s</span>
+        </div>
+      </div>
+      <div class="px-4 py-3">
+        ${metricsHtml}
+        <div class="mt-3 overflow-y-auto text-[12px] leading-relaxed text-slate-700 dark:text-slate-200 whitespace-pre-wrap border border-slate-200 dark:border-slate-700 rounded-lg p-3 bg-slate-50/50 dark:bg-slate-900/50" style="max-height:200px;">${escHtml(r.response||'—')}</div>
+        ${analysisHtml}
+      </div>
+    </div>`;
+  });
+
+  rc.innerHTML = debriefHtml;
+  rc.classList.remove('hidden');
+
+  // Toast the winner
+  if (judgeModel && scored.length >= 2) {
+    const winnerName = getModelName(winner.model_path || winner.path || '');
+    toast(`🏆 ${winnerName} wins the ${terrain.icon} ${terrain.label} battle!`, 'success', 5000);
+  } else {
+    toast('Battle complete — results in debrief', 'info');
+  }
+
+  _updateTerrainBadges();
+};
+
+// Init terrain badges on load
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(_updateTerrainBadges, 1000);
+});
 </script>
 
 <!-- ═════════════════════ LLAMA INSTALL MODAL ═════════════════════ -->
