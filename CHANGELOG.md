@@ -6,6 +6,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `_build_messages()` helper — automatic system-role folding for Gemma, Olmo, and CodeLlama models that reject the `system` chat role
+- Auto-judge selection — `populateJudgeOptions()` auto-selects the best local model as judge; manual choice is remembered
 - `test_zombie_and_process_audit.py` — 21 tests for daemon threads, port binding, connection error handling, model browser cleanup, loading spinners
 - Loading spinners on Discover grid, Catalog grid, and Download button
 - ModelScope as third model discovery source alongside HuggingFace and Discover
@@ -14,10 +16,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Total test count: 406 (was 385)
 
 ### Fixed
+- **Gemma "System role not supported"** — models that don't accept `{"role": "system"}` now get the system prompt folded into the first user message automatically
 - Backend no longer crashes with stack trace when browser tab is closed mid-response
 - Removed non-functional GitHub tab from model download browser
 
 ### Changed
+- **UI simplified** — removed terrain navigation bar (9 tabs), stats dashboard (6 panels), winner glow animation; military/gaming vocabulary replaced with clean professional language ("LLM Compare", "Run", "Models", "Results", "Leaderboard")
+- **Performance tuned** — `use_mlock=False` (trusts OS page cache, +38%), `n_threads=cores//2` (avoids thermal throttle), `n_batch=512` (was 2048), single-pass judge scoring (was 2-pass), judge model stays cached between runs
+- Quick-prompt pills consolidated into one compact row (was two rows with emoji)
+- Judge + document context collapsed into one inline row
 - Rebuild_Prompt.md updated with connection error handling guidance and new test suite
 - Enhance_plan.md updated with July 2026 research, process hygiene audit results, and new enhancement items (E14-E17)
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>⚔ The Proving Ground — LLM Battle Forge</title>
+<title>LLM Compare</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -157,7 +157,7 @@ body { font-family: 'Inter', sans-serif; }
 .dark #zOvInput:focus{border-color:#818cf8;box-shadow:0 0 0 2px rgba(99,102,241,.15)}
 #zOvInput::placeholder{color:#94a3b8}
 
-/* ═══ PROVING GROUND ADDITIONS ═══ */
+/* ═══ ADDITIONAL STYLES ═══ */
 
 /* Toast notifications */
 #toastContainer{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:420px}
@@ -217,10 +217,6 @@ body { font-family: 'Inter', sans-serif; }
 /* Tab panel toggle */
 .tab-panel{display:none}
 .tab-panel.active{display:block}
-
-/* Winner glow animation */
-@keyframes winnerGlow{0%,100%{box-shadow:0 0 20px rgba(245,158,11,.2)}50%{box-shadow:0 0 40px rgba(245,158,11,.4)}}
-.winner-glow{animation:winnerGlow 2s ease infinite}
 </style>
 </head>
 <body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display h-screen flex flex-col overflow-hidden grid-pattern">
@@ -234,9 +230,8 @@ body { font-family: 'Inter', sans-serif; }
   <div class="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
     <div class="flex items-center gap-2.5 shrink-0">
       <img src="zena_256x256.png" alt="Zena" class="w-8 h-8 rounded-xl object-cover border-2 border-primary/40 shadow-lg shadow-primary/20 shrink-0" onerror="this.onerror=null;this.src=typeof _ZENA_B64!=='undefined'?_ZENA_B64:'';">
-      <h1 class="text-sm font-extrabold tracking-tighter hidden sm:flex items-baseline gap-0.5">
-        <span class="text-primary">⚔ Proving</span><span class="text-emerald-500">Ground</span>
-        <span class="ml-1.5 text-[9px] font-bold tracking-widest text-slate-400 uppercase">v3.0</span>
+      <h1 class="text-sm font-extrabold tracking-tight hidden sm:flex items-baseline gap-1">
+        <span class="text-primary">LLM</span><span class="text-slate-600 dark:text-slate-300">Compare</span>
       </h1>
     </div>
     <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block"></div>
@@ -269,52 +264,7 @@ body { font-family: 'Inter', sans-serif; }
   </div>
 </header>
 
-<!-- ═══════════════════ TERRAIN NAVIGATION ═══════════════════ -->
-<div id="terrainNav" class="shrink-0 border-b border-slate-200/60 dark:border-border-dark/60 bg-white/60 dark:bg-background-dark/60 backdrop-blur-lg px-4 py-2 flex items-center gap-2 overflow-x-auto z-30">
-  <div class="terrain-tab active" onclick="selectTerrain('all')" data-terrain="all">
-    <span class="t-icon">⚔️</span>
-    <span class="t-label">All</span>
-  </div>
-  <div class="terrain-tab" onclick="selectTerrain('medical')" data-terrain="medical">
-    <span class="t-icon">🏥</span>
-    <span class="t-label">Medical</span>
-    <span class="t-count" id="tc-medical" style="display:none">0</span>
-  </div>
-  <div class="terrain-tab" onclick="selectTerrain('code')" data-terrain="code">
-    <span class="t-icon">💻</span>
-    <span class="t-label">Code</span>
-    <span class="t-count" id="tc-code" style="display:none">0</span>
-  </div>
-  <div class="terrain-tab" onclick="selectTerrain('reasoning')" data-terrain="reasoning">
-    <span class="t-icon">🧠</span>
-    <span class="t-label">Reasoning</span>
-    <span class="t-count" id="tc-reasoning" style="display:none">0</span>
-  </div>
-  <div class="terrain-tab" onclick="selectTerrain('speed')" data-terrain="speed">
-    <span class="t-icon">⚡</span>
-    <span class="t-label">Speed</span>
-    <span class="t-count" id="tc-speed" style="display:none">0</span>
-  </div>
-  <div class="terrain-tab" onclick="selectTerrain('multilingual')" data-terrain="multilingual">
-    <span class="t-icon">🌍</span>
-    <span class="t-label">Polyglot</span>
-    <span class="t-count" id="tc-multilingual" style="display:none">0</span>
-  </div>
-  <div class="terrain-tab" onclick="selectTerrain('adversarial')" data-terrain="adversarial">
-    <span class="t-icon">🛡️</span>
-    <span class="t-label">Adversarial</span>
-    <span class="t-count" id="tc-adversarial" style="display:none">0</span>
-  </div>
-  <div class="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1 shrink-0"></div>
-  <div class="terrain-tab" onclick="selectTerrain('scout')" data-terrain="scout">
-    <span class="t-icon">🔭</span>
-    <span class="t-label">Scout</span>
-  </div>
-  <div class="terrain-tab" onclick="selectTerrain('matrix')" data-terrain="matrix">
-    <span class="t-icon">📊</span>
-    <span class="t-label">Deploy Matrix</span>
-  </div>
-</div>
+<!-- Terrain nav removed — terrain selection moved to prompt topic -->
 
 <div class="flex flex-1 overflow-hidden">
 
@@ -333,9 +283,9 @@ body { font-family: 'Inter', sans-serif; }
   <div class="panel-header">
     <div class="flex items-center gap-1.5">
       <span class="material-symbols-outlined" style="font-size:11px;">database</span>
-      WAR ROOM
+      MODELS
     </div>
-    <button onclick="openDownloadModal()" class="text-primary hover:underline" style="font-size:9px;">⚔ Recruit</button>
+    <button onclick="openDownloadModal()" class="text-primary hover:underline" style="font-size:9px;">+ Download</button>
   </div>
   <div class="px-2 py-1.5 border-b border-slate-200 dark:border-border-dark">
     <div class="relative">
@@ -375,7 +325,7 @@ body { font-family: 'Inter', sans-serif; }
     <summary class="panel-header cursor-pointer select-none list-none flex justify-between items-center">
       <div class="flex items-center gap-1.5">
         <span class="material-symbols-outlined" style="font-size:11px;">cloud_done</span>
-        CLOUD KEYS
+        API KEYS
       </div>
       <span class="material-symbols-outlined transition-transform group-open:rotate-180" style="font-size:13px;">expand_more</span>
     </summary>
@@ -407,7 +357,7 @@ body { font-family: 'Inter', sans-serif; }
     <summary class="panel-header cursor-pointer select-none list-none flex justify-between items-center">
       <div class="flex items-center gap-1.5">
         <span class="material-symbols-outlined" style="font-size:11px;">language</span>
-        CLOUD MODELS
+        ONLINE MODELS
       </div>
       <span class="material-symbols-outlined transition-transform group-open:rotate-180" style="font-size:13px;">expand_more</span>
     </summary>
@@ -430,149 +380,68 @@ body { font-family: 'Inter', sans-serif; }
   <div id="matrixPanel" class="tab-panel flex-1 overflow-auto bg-slate-50/80 dark:bg-slate-950/80">
     <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
       <span style="font-size:48px;opacity:.2;">📊</span>
-      <p class="text-sm font-semibold">Run battles to build the deployment matrix</p>
+      <p class="text-sm font-semibold">Run comparisons to build the deployment matrix</p>
     </div>
   </div>
 
   <!-- Normal Content (main workbench) -->
   <div id="normalContent" class="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-  <!-- Top row: metrics + judge + file picker -->
-  <div class="flex shrink-0 border-b border-slate-200 dark:border-border-dark bg-white dark:bg-background-dark/60 overflow-x-auto">
+  <!-- Compact controls row: Judge + File picker -->
+  <div class="flex shrink-0 border-b border-slate-200 dark:border-border-dark bg-white dark:bg-background-dark/60 items-center gap-3 px-3 py-2">
 
-    <!-- Metric: Speed -->
-    <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">⚡ COMBAT SPEED</div>
-      <div class="p-2.5">
-        <div class="flex items-end justify-between mb-1.5">
-          <span class="text-base font-bold" id="metricSpeed">—</span>
-          <span class="text-emerald-500 text-[9px] font-bold" id="metricSpeedTrend"></span>
-        </div>
-        <div class="h-6 flex items-end gap-0.5" id="speedMiniChart">
-          <div class="bg-primary/20 w-full h-1/2 rounded-t-sm"></div>
-          <div class="bg-primary/20 w-full h-2/3 rounded-t-sm"></div>
-          <div class="bg-primary/20 w-full h-1/2 rounded-t-sm"></div>
-          <div class="bg-primary/20 w-full h-3/4 rounded-t-sm"></div>
-          <div class="bg-primary w-full h-full rounded-t-sm"></div>
-        </div>
-      </div>
+    <!-- Judge selector (compact) -->
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Judge</span>
+      <select id="judgeModel" onchange="this.dataset.userChosen='1';_syncZenaChatModel()" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[11px] px-2 py-1 focus:ring-1 focus:ring-primary outline-none font-semibold text-slate-700 dark:text-slate-200 cursor-pointer min-w-[160px]">
+        <option value="">— None —</option>
+        <option value="local:best">Auto (lightest local)</option>
+        <optgroup label="Local Models" id="judgeLocalOpts"></optgroup>
+        <optgroup label="Online (needs key)">
+          <option value="online:gpt4">GPT-4</option>
+          <option value="online:gpt4-turbo">GPT-4 Turbo</option>
+          <option value="online:claude-opus">Claude Opus</option>
+          <option value="online:claude-sonnet">Claude Sonnet</option>
+          <option value="online:gemini-pro">Gemini Pro</option>
+        </optgroup>
+      </select>
+      <select id="judgeTemplate" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] px-1.5 py-1 focus:ring-1 focus:ring-primary outline-none text-slate-600 dark:text-slate-300 cursor-pointer">
+        <option value="medical">Medical</option>
+        <option value="general" selected>General</option>
+        <option value="coding">Code</option>
+        <option value="reasoning">Reasoning</option>
+        <option value="multilingual">Multilingual</option>
+      </select>
     </div>
 
-    <!-- Metric: Quality -->
-    <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">⭐ BATTLE SCORE</div>
-      <div class="p-2.5">
-        <div class="flex items-end justify-between mb-1.5">
-          <span class="text-base font-bold" id="metricQuality">—</span>
-          <span class="text-emerald-500 text-[9px] font-bold"></span>
-        </div>
-        <div class="h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-3">
-          <div class="bg-primary h-full transition-all" id="qualityBar" style="width:0%"></div>
-        </div>
-      </div>
-    </div>
+    <div class="w-px h-5 bg-slate-200 dark:bg-slate-700"></div>
 
-    <!-- Metric: First Token -->
-    <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">🎯 REACTION TIME</div>
-      <div class="p-2.5">
-        <span class="text-base font-bold" id="metricTTFT">—</span>
-        <p class="text-[9px] text-slate-400 mt-0.5">avg latency</p>
-      </div>
-    </div>
-
-    <!-- Metric: Peak RAM -->
-    <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">💪 WEIGHT CLASS</div>
-      <div class="p-2.5">
-        <span class="text-base font-bold" id="metricMem">—</span>
-        <p class="text-[9px] text-slate-400 mt-0.5">avg MB used</p>
-      </div>
-    </div>
-
-    <!-- Metric: Fastest -->
-    <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">🏆 CHAMPION</div>
-      <div class="p-2.5">
-        <span class="text-base font-bold" id="metricFastest">—</span>
-        <p class="text-[9px] text-slate-400 mt-0.5">total time</p>
-      </div>
-    </div>
-
-    <!-- Metric: Efficiency -->
-    <div class="workbench-panel min-w-[130px] border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">EFFICIENCY</div>
-      <div class="p-2.5">
-        <span class="text-base font-bold" id="metricEfficiency">—</span>
-        <p class="text-[9px] text-slate-400 mt-0.5">tok/s per GB</p>
-      </div>
-    </div>
-
-    <!-- File Picker -->
-    <div class="workbench-panel flex-1 border-r border-slate-200 dark:border-border-dark border-l-0 border-t-0 border-b-0" style="border-radius:0;">
-      <div class="panel-header">
-        <span>DOCUMENT CONTEXT</span>
-        <div id="documentIndicator" class="hidden text-[9px] px-1.5 py-0.5 bg-emerald-100 text-emerald-600 rounded font-bold">
-          ✓ <span id="docName">file</span>
-        </div>
-      </div>
-      <div class="p-2 flex flex-col gap-1.5">
-        <div class="flex items-center gap-2">
-          <label class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 cursor-pointer flex items-center gap-1 px-2 py-1 rounded border border-dashed border-slate-300 dark:border-slate-600 hover:border-primary hover:text-primary transition-all" title="Pick a single file">
-            📄 File <input type="file" id="filePicker" accept=".txt,.json,.md,.csv,.js,.py,.html,.xml,.log" class="hidden"/>
-          </label>
-          <label class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 cursor-pointer flex items-center gap-1 px-2 py-1 rounded border border-dashed border-slate-300 dark:border-slate-600 hover:border-primary hover:text-primary transition-all" title="Pick an entire folder (all text files)">
-            📁 Folder <input type="file" id="dirPicker" webkitdirectory multiple accept=".txt,.json,.md,.csv,.js,.py,.html,.xml,.log" class="hidden"/>
-          </label>
-          <button id="clearDocBtn" onclick="clearDocument()" class="hidden text-[10px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-red-500">✕</button>
-        </div>
-        <div id="filePreview" class="text-[9px] text-slate-400 font-mono truncate">No file loaded</div>
-        <div id="chunkWarn" class="hidden text-[9px] font-bold text-amber-600 dark:text-amber-400"></div>
-      </div>
-    </div>
-
-    <!-- Judge selector -->
-    <div class="workbench-panel min-w-[200px] border-l-0 border-t-0 border-b-0 border-r-0" style="border-radius:0;">
-      <div class="panel-header">
-        <span class="flex items-center gap-1">⚖️ JUDGE MODEL</span>
-        <span class="text-[9px] text-slate-400 normal-case font-normal">scores responses</span>
-      </div>
-      <div class="p-2">
-        <select id="judgeModel" onchange="_syncZenaChatModel()" class="w-full bg-slate-50 dark:bg-slate-800 border-2 border-primary/40 dark:border-primary/50 rounded text-[12px] px-2 py-1.5 focus:ring-2 focus:ring-primary outline-none font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">
-          <option value="">— None (no scoring) —</option>
-          <option value="local:best">🏆 Best Local (Auto-pick)</option>
-          <optgroup label="── Your Local Models ──" id="judgeLocalOpts"></optgroup>
-          <optgroup label="── Online (needs key) ──">
-            <option value="online:gpt4">GPT-4</option>
-            <option value="online:gpt4-turbo">GPT-4 Turbo</option>
-            <option value="online:claude-opus">Claude Opus</option>
-            <option value="online:claude-sonnet">Claude Sonnet</option>
-            <option value="online:gemini-pro">Gemini Pro</option>
-          </optgroup>
-        </select>
-        <select id="judgeTemplate" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[11px] px-2 py-1 mt-1 focus:ring-1 focus:ring-primary outline-none text-slate-600 dark:text-slate-300 cursor-pointer">
-          <option value="medical">🏥 Medical / Clinical</option>
-          <option value="general" selected>💬 General assistant</option>
-          <option value="coding">💻 Code quality</option>
-          <option value="reasoning">🧠 Reasoning / Math</option>
-          <option value="multilingual">🌍 Multilingual quality</option>
-        </select>
-        <p class="text-[9px] text-slate-400 dark:text-slate-500 mt-1">Default: <strong class="text-primary">Lightest local</strong> (fast judge) or GPT-4o if cloud key</p>
-      </div>
+    <!-- File picker (compact) -->
+    <div class="flex items-center gap-2">
+      <label class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 cursor-pointer flex items-center gap-1 px-2 py-1 rounded border border-dashed border-slate-300 dark:border-slate-600 hover:border-primary hover:text-primary transition-all" title="Attach a file for context">
+        📄 File <input type="file" id="filePicker" accept=".txt,.json,.md,.csv,.js,.py,.html,.xml,.log" class="hidden"/>
+      </label>
+      <label class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 cursor-pointer flex items-center gap-1 px-2 py-1 rounded border border-dashed border-slate-300 dark:border-slate-600 hover:border-primary hover:text-primary transition-all" title="Attach a folder">
+        📁 Folder <input type="file" id="dirPicker" webkitdirectory multiple accept=".txt,.json,.md,.csv,.js,.py,.html,.xml,.log" class="hidden"/>
+      </label>
+      <button id="clearDocBtn" onclick="clearDocument()" class="hidden text-[10px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-red-500">✕</button>
+      <span id="filePreview" class="text-[9px] text-slate-400 font-mono truncate max-w-[200px]">No file</span>
+      <div id="documentIndicator" class="hidden text-[9px] px-1.5 py-0.5 bg-emerald-100 text-emerald-600 rounded font-bold">✓ <span id="docName">file</span></div>
+      <div id="chunkWarn" class="hidden text-[9px] font-bold text-amber-600 dark:text-amber-400"></div>
     </div>
   </div>
 
   <!-- Results table (main area) -->
   <div class="flex-1 overflow-auto bg-slate-50/80 dark:bg-slate-950/80">
     <div id="resultsPlaceholder" class="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
-      <span class="material-symbols-outlined" style="font-size:48px;opacity:.2;">swords</span>
-      <p class="text-sm font-semibold tracking-wide">Select combatants · choose your terrain · ENGAGE</p>
-      <p class="text-xs text-slate-400/60">Battle debrief will appear here</p>
+      <span class="material-symbols-outlined" style="font-size:48px;opacity:.2;">compare</span>
+      <p class="text-sm font-semibold tracking-wide">Select models · enter a prompt · click Run</p>
+      <p class="text-xs text-slate-400/60">Results will appear here</p>
     </div>
     <div id="resultsSection" class="hidden">
       <div class="workbench-panel mx-0 border-0 border-b border-slate-200 dark:border-slate-800" style="border-radius:0;">
         <div class="panel-header">
-          <span>⚔ BATTLE DEBRIEF</span>
+          <span>RESULTS</span>
           <div class="flex items-center gap-3">
             <button onclick="_shareReport()" class="flex items-center gap-1 text-primary hover:text-primary/80 text-[11px] font-bold">
               SHARE <span class="material-symbols-outlined" style="font-size:11px;">share</span>
@@ -612,7 +481,7 @@ body { font-family: 'Inter', sans-serif; }
       <div class="workbench-panel mx-0 border-0 border-t border-slate-200 dark:border-slate-800" style="border-radius:0;">
         <div class="panel-header">
           <div class="flex items-center gap-3">
-            <span>🏆 CHAMPIONSHIP STANDINGS</span>
+            <span>🏆 LEADERBOARD</span>
             <button onclick="_toggleHistoryView()" id="histToggleBtn" class="text-primary hover:text-primary/80 text-[10px] font-bold uppercase">Show History</button>
           </div>
           <button onclick="_clearHistory()" class="text-[10px] text-slate-400 hover:text-red-500 font-bold">CLEAR</button>
@@ -642,26 +511,21 @@ body { font-family: 'Inter', sans-serif; }
     </div>
   </div>
 
-  <!-- ═══ CONSOLE BAR (bottom) ═══ -->
-  <div class="workbench-panel shrink-0 border-t-2 border-primary/60 border-l-0 border-r-0 border-b-0 z-20" style="border-radius:0;">
+  <!-- ═══ INPUT BAR ═══ -->
+  <div class="workbench-panel shrink-0 border-t border-slate-200/60 dark:border-border-dark/60 border-l-0 border-r-0 border-b-0 z-20" style="border-radius:0;">
     <div class="panel-header bg-white/80 dark:bg-slate-900/60 backdrop-blur-md py-1.5">
-      <!-- LEFT: big Run + Monkey + CONSOLE label -->
+      <!-- LEFT: Run + Random + selected chips -->
       <div class="flex items-center gap-2">
         <button id="runBtn" onclick="runComparison()"
-          class="flex items-center gap-2 px-5 py-1.5 bg-gradient-to-r from-primary to-indigo-600 text-white rounded-xl font-extrabold shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 hover:scale-[1.02] active:scale-95 transition-all group text-[13px] tracking-wide">
-          <span class="material-symbols-outlined group-hover:animate-pulse" style="font-size:16px;">bolt</span>
-          <span id="runBtnLabel">⚔ ENGAGE</span>
+          class="flex items-center gap-1.5 px-4 py-1.5 bg-primary text-white rounded-lg font-bold shadow-sm hover:bg-indigo-600 active:scale-95 transition-all text-[13px]">
+          <span class="material-symbols-outlined" style="font-size:14px;">play_arrow</span>
+          <span id="runBtnLabel">Run</span>
         </button>
-        <button id="monkeyBtn" onclick="runMonkey()" title="Monkey Mode: randomly pick models + question and run!"
-          class="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl font-bold shadow-md shadow-amber-400/20 hover:shadow-lg hover:shadow-amber-400/30 hover:scale-[1.02] active:scale-95 transition-all text-[11px]">
-          <span style="font-size:14px;line-height:1;">🐒</span>
-          <span id="monkeyBtnLabel" class="tracking-wide">SURPRISE</span>
+        <button id="monkeyBtn" onclick="runMonkey()" title="Random models + random question"
+          class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all text-[11px] border border-slate-200 dark:border-slate-700">
+          <span id="monkeyBtnLabel">Random</span>
         </button>
-        <div class="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-        <span class="flex items-center gap-1.5 text-primary font-bold text-[11px]">
-          <span class="material-symbols-outlined" style="font-size:12px;">target</span> MISSION BRIEFING
-        </span>
-        <div class="flex gap-1.5" id="activeChipRow"></div>
+        <div class="flex gap-1" id="activeChipRow"></div>
       </div>
       <!-- RIGHT: status + clear -->
       <div class="flex items-center gap-2">
@@ -669,31 +533,25 @@ body { font-family: 'Inter', sans-serif; }
           <span id="statusSpinner" class="hidden w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block"></span>
           <span id="statusMsg"></span>
         </div>
-        <button onclick="clearAll()" class="text-[11px] text-slate-400 dark:text-slate-500 hover:text-red-500 uppercase font-bold">Clear</button>
+        <button onclick="clearAll()" class="text-[11px] text-slate-400 dark:text-slate-500 hover:text-red-500 font-semibold">Clear</button>
       </div>
     </div>
     <div class="p-2.5 flex flex-col gap-1.5 bg-white/70 dark:bg-slate-900/50 backdrop-blur-sm">
       <div class="flex-1 flex flex-col gap-1.5">
-        <!-- Question bank topic picker -->
+        <!-- Quick prompts (single compact row) -->
         <div class="flex items-center gap-1.5 flex-wrap">
-          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Challenges:</span>
-          <button onclick="loadQuestion('random')" class="qpill">🎲 Random</button>
-          <button onclick="loadQuestion('ops')" class="qpill">🏥 Hospital Ops</button>
-          <button onclick="loadQuestion('emergency')" class="qpill">🚨 Emergency</button>
-          <button onclick="loadQuestion('cardiology')" class="qpill">❤️ Cardiology</button>
-          <button onclick="loadQuestion('coding')" class="qpill">💻 Code</button>
-          <button onclick="loadQuestion('reasoning')" class="qpill">🧠 Reasoning</button>
-          <button onclick="loadQuestion('multilingual')" class="qpill">🌍 Multilingual</button>
-        </div>
-        <!-- Preset scenario cards -->
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Battle Terrains:</span>
-          <button onclick="loadScenario('clinical_triage')" class="qpill" title="Emergency triage scenario: medical questions, clinical judge, low temperature">🏥 Clinical Triage</button>
-          <button onclick="loadScenario('code_review')" class="qpill" title="Code review: coding prompts, code judge, temp 0.1, 1024 tokens">💻 Code Review</button>
-          <button onclick="loadScenario('math_olympiad')" class="qpill" title="Hard reasoning: math puzzles, reasoning judge, temp 0, 2048 tokens, 30min timeout">🧮 Math Olympiad</button>
-          <button onclick="loadScenario('polyglot')" class="qpill" title="Multilingual: questions in various languages, multilingual judge">🌍 Polyglot Test</button>
-          <button onclick="loadScenario('speed_test')" class="qpill" title="Speed benchmark: short answers, 128 tokens, fast inference">⚡ Speed Test</button>
-          <button onclick="loadScenario('stress_test')" class="qpill" title="Stress test: long context, 4096 tokens, high temp">🔥 Stress Test</button>
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide whitespace-nowrap">Quick:</span>
+          <button onclick="loadQuestion('random')" class="qpill">Random</button>
+          <button onclick="loadQuestion('ops')" class="qpill">Hospital Ops</button>
+          <button onclick="loadQuestion('emergency')" class="qpill">Emergency</button>
+          <button onclick="loadQuestion('coding')" class="qpill">Code</button>
+          <button onclick="loadQuestion('reasoning')" class="qpill">Reasoning</button>
+          <button onclick="loadQuestion('multilingual')" class="qpill">Multilingual</button>
+          <div class="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-0.5"></div>
+          <button onclick="loadScenario('clinical_triage')" class="qpill" title="Medical questions, clinical judge, low temp">Clinical</button>
+          <button onclick="loadScenario('code_review')" class="qpill" title="Code review scenario">Code Review</button>
+          <button onclick="loadScenario('speed_test')" class="qpill" title="Short answers, 128 tokens">Speed</button>
+          <button onclick="loadScenario('stress_test')" class="qpill" title="Long context, 4096 tokens">Stress</button>
         </div>
         <textarea id="systemPrompt" rows="1"
           class="w-full bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[13px] resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-600 font-mono transition-all"
@@ -869,7 +727,7 @@ body { font-family: 'Inter', sans-serif; }
       <span class="material-symbols-outlined" style="font-size:12px;">chat</span>
       Ask Zena
     </button>
-    <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">© 2026 THE PROVING GROUND</span>
+    <span class="text-[11px] font-mono text-slate-500 dark:text-slate-400">© 2026 LLM Compare</span>
   </div>
 </footer>
 
@@ -943,7 +801,7 @@ body { font-family: 'Inter', sans-serif; }
     <div class="flex items-center justify-between px-6 py-3.5 border-b border-slate-200 dark:border-border-dark shrink-0">
       <h2 class="font-bold text-base flex items-center gap-2">
         <span class="material-symbols-outlined text-primary" style="font-size:18px;">download</span>
-        Downloads &amp; Recruit New Combatants
+        Downloads &amp; Model Library
       </h2>
       <button onclick="closeDownloadModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
         <span class="material-symbols-outlined" style="font-size:20px;">close</span>
@@ -1481,6 +1339,11 @@ function populateJudgeOptions() {
     // Use actual path as value so backend can resolve with os.path.exists()
     return `<option value="${m.path}">${label}</option>`;
   }).join('');
+  // Auto-select best judge if user hasn't manually chosen yet
+  const jSel = document.getElementById('judgeModel');
+  if (jSel && scannedModels.length && !jSel.dataset.userChosen) {
+    jSel.value = 'local:best';
+  }
   // also populate chat model select
   const chatSel = document.getElementById('chatModelSelect');
   if (chatSel) {
@@ -1673,9 +1536,9 @@ async function runComparison() {
   clearStatus();
   const localSel  = selectedModels.filter(id => !id.startsWith('online:'));
   const onlineSel = selectedModels.filter(id =>  id.startsWith('online:')).map(id => id.replace('online:',''));
-  if (!localSel.length && !onlineSel.length) { showStatus('⚔ Recruit at least 1 combatant first', 'warning'); return; }
+  if (!localSel.length && !onlineSel.length) { showStatus('Select at least 1 model first', 'warning'); return; }
   const prompt = document.getElementById('prompt').value.trim();
-  if (!prompt) { showStatus('⚔ Enter a battle challenge first', 'warning'); return; }
+  if (!prompt) { showStatus('Enter a prompt first', 'warning'); return; }
   // Quick backend connectivity check before committing to a long inference run
   try {
     const ping = await fetch(`${BACKEND}/__system-info`, { signal: AbortSignal.timeout(3000) });
@@ -1684,7 +1547,7 @@ async function runComparison() {
     showStatus(`❌ Backend offline — start Run_me.bat first (${e.message})`, 'error');
     return;
   }
-  showStatus(`⚔ Deploying ${localSel.length} local + ${onlineSel.length} cloud combatant(s)…`, 'info');
+  showStatus(`Running ${localSel.length} local + ${onlineSel.length} cloud model(s)…`, 'info');
   document.getElementById('runBtn').disabled = true;
   try {
     let judgeModel = document.getElementById('judgeModel').value;
@@ -1734,7 +1597,7 @@ async function runComparison() {
         terrain: _activeTerrain,
         timestamp: Date.now()/1000,
       });
-      showStatus('✔ Battle complete — check the debrief!', 'success');
+      showStatus('✔ Done — see results below!', 'success');
     }
   } catch(err) {
     showStatus('Error: ' + err.message, 'error');
@@ -1937,7 +1800,7 @@ function _handleStreamEvent(event, payload, judgeModel) {
     }
     if (event === 'done') {
       const totalSec = ((_streamStartTime ? Date.now() - _streamStartTime : 0) / 1000).toFixed(1);
-      showStatus(`✔ Battle complete! Total engagement: ${totalSec}s`, 'success');
+      showStatus(`✔ Done in ${totalSec}s`, 'success');
     }
   }
   else if (event === 'error') {
@@ -1993,7 +1856,8 @@ function displayResults(data, judgeModel) {
     }
   }
   const qualAvg = results.reduce((s,r) => s+(r.judge_score||r.quality_score||0),0)/results.length;
-  document.getElementById('qualityBar').style.width = judgeModel ? `${qualAvg*10}%` : '0%';
+  const qualBar = document.getElementById('qualityBar');
+  if (qualBar) qualBar.style.width = judgeModel ? `${qualAvg*10}%` : '0%';
 
   // TTFT panel
   const ttftEl = document.getElementById('metricTTFT');
@@ -4040,7 +3904,7 @@ function _zOvModelChange() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ═══  PROVING GROUND — Terrain, Toast, Scout, Deploy Matrix ═══
+// ═══  Terrain, Toast, Scout, Deploy Matrix ═══
 // ═══════════════════════════════════════════════════════════════
 
 // ─── Active terrain state ────────────────────────────────────
@@ -4244,7 +4108,7 @@ function _renderDeploymentMatrix() {
   if (!sorted.length) {
     panel.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
       <span style="font-size:48px;opacity:.2;">📊</span>
-      <p class="text-sm font-semibold">No battle data yet</p>
+      <p class="text-sm font-semibold">No comparison data yet</p>
       <p class="text-xs text-slate-400/60">Run comparisons across terrains to build the deployment matrix</p>
     </div>`;
     return;
@@ -4263,7 +4127,7 @@ function _renderDeploymentMatrix() {
       <thead class="bg-slate-800/60 border-b border-slate-700">
         <tr class="text-slate-400 uppercase text-[10px]">
           <th class="px-3 py-2">#</th>
-          <th class="px-3 py-2">Combatant</th>
+          <th class="px-3 py-2">Model</th>
           <th class="px-3 py-2">ELO</th>
           <th class="px-3 py-2">W/L/D</th>
           <th class="px-3 py-2">Avg Score</th>
@@ -4309,10 +4173,10 @@ function _renderDeploymentMatrix() {
       return avgTps > (best.tps||0) ? {name:n, tps:avgTps} : best;
     }, {});
     if (fastest.name) {
-      html += `<div class="strat-implication info"><span>⚡</span> <strong>${escHtml(fastest.name)}</strong> is the speed champion at ${fastest.tps.toFixed(1)} t/s avg. Best for latency-critical tasks.</div>`;
+      html += `<div class="strat-implication info"><span>⚡</span> <strong>${escHtml(fastest.name)}</strong> is the fastest at ${fastest.tps.toFixed(1)} t/s avg. Best for latency-critical tasks.</div>`;
     }
     if (sorted.length >= 3 && sorted[sorted.length-1][1].rating < 1400) {
-      html += `<div class="strat-implication warning"><span>⚠</span> <strong>${escHtml(sorted[sorted.length-1][0])}</strong> underperforming (ELO ${sorted[sorted.length-1][1].rating}). Consider replacing with a stronger contender.</div>`;
+      html += `<div class="strat-implication warning"><span>⚠</span> <strong>${escHtml(sorted[sorted.length-1][0])}</strong> underperforming (ELO ${sorted[sorted.length-1][1].rating}). Consider replacing with a better model.</div>`;
     }
     html += `</div>`;
   }
@@ -4321,7 +4185,7 @@ function _renderDeploymentMatrix() {
   panel.innerHTML = html;
 }
 
-// ─── Proving Ground: Enhanced displayResults (Debrief + Podium) ──────────
+// ─── Enhanced displayResults (Summary Cards) ──────────
 const _origDisplayResults = displayResults;
 displayResults = function(data, judgeModel) {
   // Call original to populate metrics and table
@@ -4337,7 +4201,7 @@ displayResults = function(data, judgeModel) {
     localStorage.setItem(_HIST_KEY, JSON.stringify(lastHist));
   }
 
-  // Build Debrief + Podium below the table
+  // Build summary cards below the table
   const rc = document.getElementById('responseCards');
   if (!rc) return;
 
@@ -4352,17 +4216,17 @@ displayResults = function(data, judgeModel) {
   const winner = scored[0];
   const terrain = _TERRAIN_MAP[_activeTerrain] || _TERRAIN_MAP.all;
 
-  // Build podium + debrief HTML
+  // Build result cards
   let debriefHtml = '';
 
   // Winner announcement (only if judged)
   if (judgeModel && scored.length >= 2) {
     const winnerName = getModelName(winner.model_path || winner.path || '');
     debriefHtml += `<div class="col-span-full mb-4">
-      <div class="podium-card winner winner-glow bg-gradient-to-r from-amber-900/20 to-yellow-900/20 dark:from-amber-900/30 dark:to-yellow-900/30 text-center py-6">
+      <div class="podium-card winner bg-gradient-to-r from-amber-900/20 to-yellow-900/20 dark:from-amber-900/30 dark:to-yellow-900/30 text-center py-6">
         <div class="text-3xl mb-2">🏆</div>
         <div class="text-lg font-extrabold text-amber-400">${escHtml(winnerName)}</div>
-        <div class="text-sm text-amber-300/80 mt-1">Champion of ${terrain.icon} ${terrain.label} — Score: ${winner._score.toFixed(1)}/10</div>
+        <div class="text-sm text-amber-300/80 mt-1">Best result — Score: ${winner._score.toFixed(1)}/10</div>
         <div class="flex items-center justify-center gap-4 mt-3 text-[11px] text-slate-400">
           <span>${(winner.tokens_per_sec||0).toFixed(1)} t/s</span>
           <span>•</span>
@@ -4374,7 +4238,7 @@ displayResults = function(data, judgeModel) {
     </div>`;
   }
 
-  // Debrief cards for each combatant
+  // Result cards for each model
   rc.style.gridTemplateColumns = scored.length <= 2 ? `repeat(${scored.length}, 1fr)` : 'repeat(auto-fill,minmax(340px,1fr))';
   scored.forEach((r, rank) => {
     const name = getModelName(r.model_path || r.path || '');

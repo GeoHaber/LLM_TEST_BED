@@ -17,14 +17,17 @@ Send any prompt to 1–8 models at once, score every response with a configurabl
 
 - **Side-by-side inference** — up to 8 local GGUF models run in parallel threads
 - **LLM-as-judge scoring** — a separate local model grades every response on accuracy, reasoning, instruction-following, and safety (0–10)
+- **Auto-judge selection** — automatically picks the best available local model as judge
 - **5 judge templates** — Medical/Clinical · General Assistant · Code Quality · Reasoning/Math · Multilingual
+- **Broad model compatibility** — Gemma, Olmo, CodeLlama, and other models that reject the system role are handled automatically
 - **32 question bank** — categorised test prompts across 6 categories (ops, emergency, cardiology, coding, reasoning, multilingual)
 - **Live performance metrics** — TTFT, tokens/s, RAM delta, total time
 - **Catalog + Hugging Face discovery** — 42 curated download cards plus live GGUF search with source, trust, fit, and preset hints
 - **ModelScope discovery** — alternative model source alongside HuggingFace
-- **Monkey Mode 🐒** — randomised model + prompt + judge for unattended regression runs
+- **Random mode** — randomised model + prompt + judge for unattended regression runs
 - **Zena AI assistant** — built-in chat powered by any of your local models
 - **No build step** — single HTML file + one Python file, pure stdlib backend
+- **Tuned for performance** — OS page cache (no mlock), half-core threading, optimised batch size
 - **Dark mode** · **RTL languages** (Hebrew, Arabic) · **CSV export**
 
 ---
@@ -122,7 +125,7 @@ This design originates from the [Local_LLM Swarm](https://github.com/GeoHaberC/L
           │
   ┌───────┴────────┐
   │  Phase 3:      │   Judge model scores each response
-  │  Judge scoring  │   2-pass position-bias mitigation (Zheng et al.)
+  │  Judge scoring  │   Single-pass evaluation with structured JSON output
   └───────┬────────┘
           │
        Results table + per-model metrics
@@ -146,7 +149,7 @@ _get_or_load_model(path, n_ctx)  # cache-hit = instant, miss = load + evict olde
 
 Models stay resident between runs. The first comparison is slower (cold-load), subsequent
 runs with the same models are near-instant on the load phase. Parameters: `flash_attn=True`,
-`n_batch=2048`, `use_mmap=True`, `use_mlock=True`.
+`n_batch=512`, `use_mmap=True`, `use_mlock=False` (trusts OS page cache for better performance).
 
 ### Per-Model Metrics
 

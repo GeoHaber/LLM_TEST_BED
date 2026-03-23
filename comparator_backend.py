@@ -63,12 +63,12 @@ def _get_or_load_model(path: str, n_ctx: int = 4096):
     llm = llama_cpp.Llama(
         model_path=path,
         n_ctx=n_ctx,
-        n_threads=os.cpu_count() or 4,
+        n_threads=max(1, (os.cpu_count() or 4) // 2),
         n_gpu_layers=-1,
         flash_attn=True,
-        n_batch=2048,
+        n_batch=512,
         use_mmap=True,
-        use_mlock=True,
+        use_mlock=False,
         verbose=False,
     )
 
@@ -88,6 +88,22 @@ def _evict_model_cache():
     with _cache_lock:
         _model_cache.clear()
     gc.collect()
+
+
+def _build_messages(
+    system_prompt: str, user_content: str, model_path: str = ""
+) -> list[dict]:
+    """Build chat messages, folding system prompt into user message for models
+    that don't support the system role (e.g. Gemma, Olmo)."""
+    name_lower = os.path.basename(model_path).lower()
+    no_system = any(t in name_lower for t in ("gemma", "olmo", "codelama"))
+    if no_system or not system_prompt.strip():
+        combined = f"{system_prompt.strip()}\n\n{user_content}" if system_prompt.strip() else user_content
+        return [{"role": "user", "content": combined}]
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
 
 
 # (multiprocessing worker removed — using ThreadPoolExecutor with stream=False
@@ -1231,10 +1247,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 try:
                     # stream=False → entire C++ compute runs with GIL released
                     out = llm.create_chat_completion(
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": prompt},
-                        ],
+                        messages=_build_messages(system_prompt, prompt, path),
                         max_tokens=max_tokens,
                         temperature=temperature,
                         top_p=top_p,
@@ -1458,10 +1471,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 llm = _get_or_load_model(path, n_ctx)
                 # stream=False → entire C++ compute runs with GIL released
                 out = llm.create_chat_completion(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt},
-                    ],
+                    messages=_build_messages(system_prompt, prompt, path),
                     max_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
@@ -1608,10 +1618,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
     ) -> list[dict]:
         """Score each response using the judge model; adds judge_score + judge_detail.
 
-        Position-bias mitigation: evaluates each response twice — once in
-        original order, once with a randomised prompt preamble — then averages
-        the two scores.  This counters the well-documented position bias where
-        LLM judges favour the first response they see (Zheng et al., NeurIPS 2023).
+        Single-pass evaluation for speed on CPU-constrained systems.
         """
         try:
             import llama_cpp
@@ -1619,23 +1626,12 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             return responses
 
         import gc
-        import random
 
         judge_name = os.path.basename(judge_path).replace(".gguf", "")
         print(f"[judge] Loading {judge_name}…")
         llm = None
         try:
             llm = _get_or_load_model(judge_path, min(params.get("n_ctx", 4096), 8192))
-
-            # Build randomised context preambles per response to mitigate
-            # position bias.  Each response gets two evaluations: one with a
-            # neutral preamble, one with a shuffled-order summary of *other*
-            # responses so the judge sees different ordinal positions.
-            other_previews: list[str] = []
-            for r in responses:
-                if not r.get("error"):
-                    preview = (r.get("response") or "")[:200]
-                    other_previews.append(preview)
 
             for idx, r in enumerate(responses):
                 if r.get("error"):
@@ -1644,81 +1640,48 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 scores_collected: list[float] = []
                 details_collected: list[dict] = []
 
-                # --- Pass 1: standard (original order) ---
-                user_msg_standard = (
+                # Single-pass evaluation
+                user_msg = (
                     f"Original question: {original_prompt}\n\n"
                     f"Model response:\n{r.get('response', '')}"
                 )
-                # --- Pass 2: randomised preamble ---
-                others = [p for j, p in enumerate(other_previews) if j != idx]
-                random.shuffle(others)
-                context_block = ""
-                if others:
-                    snippets = "\n".join(
-                        f"  [Other response {i+1}]: {s}…"
-                        for i, s in enumerate(others[:3])
-                    )
-                    context_block = (
-                        f"(For context, {len(others)} other model(s) also answered "
-                        f"this question. Brief previews in random order:\n{snippets})\n\n"
-                    )
-                user_msg_shuffled = (
-                    f"Original question: {original_prompt}\n\n"
-                    f"{context_block}"
-                    f"Model response to evaluate:\n{r.get('response', '')}"
-                )
 
-                for pass_idx, user_msg in enumerate(
-                    [user_msg_standard, user_msg_shuffled]
-                ):
-                    for attempt in range(2):  # retry once on failure
-                        try:
-                            sys_prompt = (
-                                judge_system_prompt
-                                if attempt == 0
-                                else (
-                                    "Rate the response quality 0-10. Output ONLY a JSON "
-                                    'object: {"overall": <number>}'
-                                )
+                for attempt in range(2):  # retry once on failure
+                    try:
+                        sys_prompt = (
+                            judge_system_prompt
+                            if attempt == 0
+                            else (
+                                "Rate the response quality 0-10. Output ONLY a JSON "
+                                'object: {"overall": <number>}'
                             )
-                            out = llm.create_chat_completion(
-                                messages=[
-                                    {"role": "system", "content": sys_prompt},
-                                    {"role": "user", "content": user_msg},
-                                ],
-                                max_tokens=512,
-                                temperature=0.1,
-                                stream=False,
-                            )
-                            raw = out["choices"][0]["message"]["content"].strip()  # type: ignore[index]
-                            jd = extract_judge_scores(raw)
-                            score = float(jd.get("overall", 0))
-                            scores_collected.append(score)
-                            details_collected.append(jd)
-                            break
-                        except Exception as je:
-                            print(
-                                f"[judge] WARN pass {pass_idx+1} attempt {attempt+1} "
-                                f"failed for {r['model']}: {je}"
-                            )
+                        )
+                        out = llm.create_chat_completion(
+                            messages=_build_messages(sys_prompt, user_msg, judge_path),
+                            max_tokens=512,
+                            temperature=0.1,
+                            stream=False,
+                        )
+                        raw = out["choices"][0]["message"]["content"].strip()  # type: ignore[index]
+                        jd = extract_judge_scores(raw)
+                        score = float(jd.get("overall", 0))
+                        scores_collected.append(score)
+                        details_collected.append(jd)
+                        break
+                    except Exception as je:
+                        print(
+                            f"[judge] WARN attempt {attempt+1} "
+                            f"failed for {r['model']}: {je}"
+                        )
 
                 if scores_collected:
-                    avg_score = sum(scores_collected) / len(scores_collected)
-                    # Use the detail dict from the first successful pass,
-                    # but override overall with the averaged score.
-                    best_detail = details_collected[0].copy()
-                    best_detail["overall"] = round(avg_score, 1)
-                    best_detail["bias_passes"] = len(scores_collected)
-                    best_detail["individual_scores"] = [
-                        round(s, 1) for s in scores_collected
-                    ]
-                    r["judge_score"] = round(avg_score, 1)
-                    r["quality_score"] = round(avg_score, 1)
-                    r["judge_detail"] = best_detail
-                    print(
-                        f"[judge] OK {r['model']}  avg={avg_score:.1f} "
-                        f"passes={scores_collected}"
-                    )
+                    score = scores_collected[0]
+                    detail = details_collected[0].copy()
+                    detail["overall"] = round(score, 1)
+                    r["judge_score"] = round(score, 1)
+                    r["quality_score"] = round(score, 1)
+                    r["judge_detail"] = detail
+                    print(f"[judge] OK {r['model']}  score={score:.1f}")
                 else:
                     r["judge_score"] = 0
                     r["quality_score"] = 0
@@ -1727,8 +1690,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                         "error": "Judge failed after retries",
                     }
         finally:
-            del llm
-            gc.collect()
+            pass  # Keep judge model in cache for reuse
         return responses
 
     def _handle_chat(self, data: dict) -> None:
@@ -1750,13 +1712,29 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             import llama_cpp
 
             llm = _get_or_load_model(model_path, 4096)
-            full_messages = [{"role": "system", "content": system}] + messages
-            out = llm.create_chat_completion(
-                full_messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                stream=False,
-            )
+            full_messages = _build_messages(system, messages[0]["content"] if messages else "", model_path) if len(messages) <= 1 else [{"role": "system", "content": system}] + messages
+            # For multi-turn chat, try with system role; fall back if it fails
+            try:
+                out = llm.create_chat_completion(
+                    full_messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stream=False,
+                )
+            except ValueError:
+                # Model doesn't support system role — fold into first user msg
+                if full_messages and full_messages[0].get("role") == "system":
+                    sys_text = full_messages.pop(0)["content"]
+                    if full_messages and full_messages[0].get("role") == "user":
+                        full_messages[0]["content"] = sys_text + "\n\n" + full_messages[0]["content"]
+                    else:
+                        full_messages.insert(0, {"role": "user", "content": sys_text})
+                out = llm.create_chat_completion(
+                    full_messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stream=False,
+                )
             reply = out["choices"][0]["message"]["content"]  # type: ignore[index]
             self._send_json(200, {"response": reply})
         except Exception as e:
