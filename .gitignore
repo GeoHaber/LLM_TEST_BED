@@ -38,3 +38,12 @@ Thumbs.db
 *.gguf
 .env
 xray_report.json
+
+# One-off scripts / old backups (underscore-prefixed)
+_orig*.py
+_fix*.py
+_check*.py
+_patch*.py
+
+# Test temp directories
+test_download_temp/
