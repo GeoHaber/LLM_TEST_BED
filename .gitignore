@@ -47,3 +47,5 @@ _patch*.py
 
 # Test temp directories
 test_download_temp/
+model_comparator_legacy.html
+model_comparator_old.html
