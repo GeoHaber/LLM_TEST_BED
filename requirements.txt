@@ -5,4 +5,5 @@ py-cpuinfo>=9.0                  # CPU info detection
 nvidia-ml-py3>=7.352             # NVIDIA GPU monitoring (optional)
 tiktoken>=0.5                    # OpenAI tokenizer
 pytest>=7.0                      # Test runner
+zen-core-libs @ file:///C:/Users/Yo930/Documents/GitHub/zen_core_libs  # Local dev install
 

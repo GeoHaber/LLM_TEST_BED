@@ -7,6 +7,7 @@ dependencies = [
     "psutil==7.2.1",
     "huggingface_hub==0.36.0",
     "llama-cpp-python==0.3.16",
+    "zen-core-libs",
 ]
 
 [project.optional-dependencies]

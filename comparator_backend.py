@@ -3,6 +3,9 @@ LLM Model Comparator Backend
 =============================
 Serves system info, scans local models, and handles comparisons.
 
+Uses **zen_core_libs** for hardware detection, model caching, token counting,
+GGUF scanning, and build recommendations — avoiding code duplication.
+
 Usage:
     python comparator_backend.py       → runs on port 8123
     python comparator_backend.py 9000  → runs on custom port
@@ -12,12 +15,10 @@ Endpoints:
     POST /__comparison/mixed           → {local_models, online_models, prompt, ...} → results
 """
 
-import collections
 import concurrent.futures
 import gc
 import ipaddress
 import json
-import multiprocessing
 import os
 import re
 import sys
@@ -28,6 +29,22 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+
+# ── zen_core_libs imports (replaces ~300 lines of duplicated code) ────────────
+from zen_core_libs.common import (
+    count_tokens,
+    get_cpu_count,
+    get_cpu_info,
+    get_memory_gb,
+    get_system_info as _zcl_get_system_info,
+    scan_gguf_models,
+)
+from zen_core_libs.common.system import (
+    GPUInfo,
+    get_gpu_info as _zcl_get_gpu_info,
+    recommend_llama_build as _zcl_recommend_llama_build,
+)
+from zen_core_libs.llm import get_model_cache, ModelCache
 
 # Enable Vulkan GPU backend for llama-cpp-python (AMD Radeon / any Vulkan GPU)
 # Must be set before llama_cpp is imported. Has no effect if Vulkan is absent.
@@ -42,11 +59,9 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-# ─ LRU Model Cache ──────────────────────────────────────────────────────────
-# Keeps the last N loaded Llama models in memory to avoid repeated disk I/O.
+# ─ LRU Model Cache (backed by zen_core_libs.llm.ModelCache) ─────────────────
 _MODEL_CACHE_SIZE = int(os.environ.get("LLM_MODEL_CACHE_SIZE", "8"))
-_model_cache: collections.OrderedDict[str, Any] = collections.OrderedDict()
-_cache_lock = threading.Lock()
+_model_cache: ModelCache = get_model_cache(max_models=_MODEL_CACHE_SIZE)
 
 
 def _get_or_load_model(path: str, n_ctx: int = 4096):
@@ -54,39 +69,26 @@ def _get_or_load_model(path: str, n_ctx: int = 4096):
     import llama_cpp
 
     cache_key = f"{path}::ctx{n_ctx}"
-    with _cache_lock:
-        if cache_key in _model_cache:
-            _model_cache.move_to_end(cache_key)
-            return _model_cache[cache_key]
 
-    # Load outside lock to avoid blocking other cache lookups
-    llm = llama_cpp.Llama(
-        model_path=path,
-        n_ctx=n_ctx,
-        n_threads=max(1, (os.cpu_count() or 4) // 2),
-        n_gpu_layers=-1,
-        flash_attn=True,
-        n_batch=512,
-        use_mmap=True,
-        use_mlock=False,
-        verbose=False,
-    )
+    def _loader():
+        return llama_cpp.Llama(
+            model_path=path,
+            n_ctx=n_ctx,
+            n_threads=max(1, (os.cpu_count() or 4) // 2),
+            n_gpu_layers=-1,
+            flash_attn=True,
+            n_batch=512,
+            use_mmap=True,
+            use_mlock=False,
+            verbose=False,
+        )
 
-    with _cache_lock:
-        _model_cache[cache_key] = llm
-        _model_cache.move_to_end(cache_key)
-        # Evict oldest if over capacity
-        while len(_model_cache) > _MODEL_CACHE_SIZE:
-            _evicted_key, evicted_llm = _model_cache.popitem(last=False)
-            del evicted_llm
-
-    return llm
+    return _model_cache.get_or_load(cache_key, _loader)
 
 
 def _evict_model_cache():
     """Clear entire model cache (call before judge or when memory is needed)."""
-    with _cache_lock:
-        _model_cache.clear()
+    _model_cache.clear()
     gc.collect()
 
 
@@ -106,11 +108,7 @@ def _build_messages(
     ]
 
 
-# (multiprocessing worker removed — using ThreadPoolExecutor with stream=False
-# which properly releases GIL during the C++ inference compute phase)
-
-
-# ─ System info detection ────────────────────────────────────────────────────
+# ─ psutil for RAM delta tracking ────────────────────────────────────────────
 try:
     import psutil
 
@@ -122,187 +120,72 @@ except ImportError:
     proc = None
 
 
-def get_cpu_count() -> int:
-    """Get physical CPU core count."""
-    try:
-        return os.cpu_count() or 1
-    except Exception:
-        return 1
+# ── Compatibility wrappers for zen_core_libs ─────────────────────────────────
+# zen_core_libs returns GPUInfo dataclass objects; the frontend + tests expect dicts.
 
-
-def get_memory_gb() -> float:
-    """Get total RAM in GB."""
-    if HAS_PSUTIL:
-        try:
-            return psutil.virtual_memory().total / (1024**3)  # type: ignore[union-attr]
-        except Exception:
-            pass
-    return 8.0  # fallback
-
-
-def get_cpu_info() -> dict:
-    """Detect CPU brand, full model name, and SIMD capabilities."""
-    import platform
-
-    info = {
-        "brand": "Unknown",
-        "name": "",
-        "cores": get_cpu_count(),
-        "avx2": False,
-        "avx512": False,
-    }
-    try:
-        proc = platform.processor()
-        if proc:
-            info["name"] = proc
-            up = proc.upper()
-            if "AMD" in up:
-                info["brand"] = "AMD"
-            elif "INTEL" in up:
-                info["brand"] = "Intel"
-    except Exception:
-        pass
-
-    # Try PROCESSOR_IDENTIFIER env var (Windows, non-blocking)
-    pid = os.environ.get("PROCESSOR_IDENTIFIER", "")
-    if pid and info["brand"] == "Unknown":
-        if "AMD" in pid.upper():
-            info["brand"] = "AMD"
-        elif "INTEL" in pid.upper():
-            info["brand"] = "Intel"
-    if pid and not info["name"]:
-        info["name"] = pid
-
-    # CPUID via cpuinfo (optional, fast)
-    try:
-        import cpuinfo as _ci
-
-        d = _ci.get_cpu_info()
-        info["name"] = d.get("brand_raw", info["name"])
-        flags = d.get("flags", [])
-        info["avx2"] = "avx2" in flags
-        info["avx512"] = any(f.startswith("avx512") for f in flags)
-        brand = info["name"].upper()
-        if "AMD" in brand:
-            info["brand"] = "AMD"
-        elif "INTEL" in brand:
-            info["brand"] = "Intel"
-    except Exception:
-        pass
-
-    # Fallback AVX2 detection via ctypes on Windows
-    if not info["avx2"]:
-        try:
-            import ctypes
-
-            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-            # IsProcessorFeaturePresent(PF_AVX2_INSTRUCTIONS_AVAILABLE = 40)
-            info["avx2"] = bool(kernel32.IsProcessorFeaturePresent(40))
-        except Exception:
-            pass
-
-    return info
+_BACKEND_MAP = {"cuda": "CUDA", "rocm": "ROCm/Vulkan", "wmi": "DirectML"}
 
 
 def get_gpu_info() -> list[dict]:
-    """Detect GPUs and CUDA/ROCm/DirectML support."""
-    gpus = []
+    """Detect GPUs via zen_core_libs, return as list of dicts for backward compat."""
+    raw = _zcl_get_gpu_info()
+    return [
+        {
+            "name": g.name,
+            "vendor": g.vendor,
+            "vram_gb": round(g.vram_gb, 1),
+            "backend": _BACKEND_MAP.get(g.backend, g.backend),
+        }
+        for g in raw
+    ]
 
-    # ── NVIDIA via pynvml ────────────────────────────────────────────────────
-    try:
-        import pynvml  # type: ignore[import-untyped]
 
-        pynvml.nvmlInit()
-        count = pynvml.nvmlDeviceGetCount()
-        for i in range(count):
-            h = pynvml.nvmlDeviceGetHandleByIndex(i)
-            name = pynvml.nvmlDeviceGetName(h)
-            if isinstance(name, bytes):
-                name = name.decode()
-            mem = pynvml.nvmlDeviceGetMemoryInfo(h)
-            gpus.append(
-                {
-                    "name": name,
-                    "vendor": "NVIDIA",
-                    "vram_gb": round(mem.total / (1024**3), 1),
-                    "backend": "CUDA",
-                }
-            )
-        pynvml.nvmlShutdown()
-    except Exception:
-        pass
+def recommend_llama_build(cpu: dict | None = None, gpus: list | None = None) -> dict:
+    """Recommend best llama.cpp build. Accepts dicts or GPUInfo objects."""
+    # Convert dict gpus to GPUInfo for zen_core_libs
+    _REVERSE_BACKEND = {"CUDA": "cuda", "ROCm/Vulkan": "rocm", "DirectML": "wmi"}
+    gpu_objs: list[GPUInfo] | None = None
+    if gpus is not None:
+        gpu_objs = []
+        for g in gpus:
+            if isinstance(g, GPUInfo):
+                gpu_objs.append(g)
+            elif isinstance(g, dict):
+                be = g.get("backend", "")
+                gpu_objs.append(GPUInfo(
+                    name=g.get("name", "Unknown"),
+                    vendor=g.get("vendor", "Unknown"),
+                    vram_gb=g.get("vram_gb", 0.0),
+                    backend=_REVERSE_BACKEND.get(be, be.lower()),
+                ))
+    rec = _zcl_recommend_llama_build(cpu, gpu_objs)
+    # Map flag: zen_core_libs uses pip args; tests expect short tag
+    build = rec.get("build", "").lower()
+    if "cuda" in build:
+        rec["flag"] = "cuda"
+    elif "rocm" in build or "vulkan" in build:
+        rec["flag"] = "rocm"
+    elif "avx-512" in build or "avx512" in build:
+        rec["flag"] = "avx512"
+    elif "avx2" in build:
+        rec["flag"] = "avx2"
+    else:
+        rec["flag"] = "cpu"
+    # Add "pip" key alias for backward compat (old tests check rec["pip"])
+    if "pip_command" in rec:
+        rec["pip"] = rec["pip_command"]
+    return rec
 
-    # ── AMD via pyamdgpuinfo or WMI fallback ────────────────────────────────
-    if not gpus:
-        try:
-            import pyamdgpuinfo  # type: ignore[import-untyped]
 
-            count = pyamdgpuinfo.detect_gpus()
-            for i in range(count):
-                g = pyamdgpuinfo.get_gpu(i)
-                vram = getattr(g, "memory_info", {}).get("vram_size", 0)
-                gpus.append(
-                    {
-                        "name": g.name if hasattr(g, "name") else "AMD GPU",
-                        "vendor": "AMD",
-                        "vram_gb": round(vram / (1024**3), 1) if vram else 0,
-                        "backend": "ROCm/Vulkan",
-                    }
-                )
-        except Exception:
-            pass
+def get_system_info(model_dirs: list[str] | None = None) -> dict:
+    """Return comprehensive system info, augmented with llama.cpp status."""
+    info = _zcl_get_system_info(model_dirs)
+    info["timestamp"] = time.time()
+    llama = get_llama_cpp_info()
+    info["has_llama_cpp"] = llama["installed"]
+    info["llama_cpp_version"] = llama["version"]
+    return info
 
-    # ── Windows PowerShell WMI fallback (wmic is deprecated on Win 11) ──────
-    if not gpus:
-        try:
-            import json as _json
-            import subprocess
-
-            ps_cmd = (
-                "Get-CimInstance Win32_VideoController "
-                "| Select-Object Name,AdapterRAM "
-                "| ConvertTo-Json -Compress"
-            )
-            out = subprocess.check_output(
-                ["powershell", "-NoProfile", "-Command", ps_cmd],
-                timeout=10,
-                universal_newlines=True,
-            )
-            raw = _json.loads(out.strip())
-            # ConvertTo-Json returns a dict for one GPU, list for multiple
-            entries = raw if isinstance(raw, list) else [raw]
-            for entry in entries:
-                name = (entry.get("Name") or "").strip()
-                if not name or name.lower() in ("", "microsoft basic display adapter"):
-                    continue
-                vram_bytes = int(entry.get("AdapterRAM") or 0)
-                up = name.upper()
-                vendor = (
-                    "NVIDIA"
-                    if "NVIDIA" in up
-                    else (
-                        "AMD"
-                        if "AMD" in up or "RADEON" in up
-                        else ("Intel" if "INTEL" in up else "Unknown")
-                    )
-                )
-                backend = (
-                    "CUDA"
-                    if vendor == "NVIDIA"
-                    else ("ROCm/Vulkan" if vendor == "AMD" else "DirectML")
-                )
-                gpus.append(
-                    {
-                        "name": name,
-                        "vendor": vendor,
-                        "vram_gb": round(vram_bytes / (1024**3), 1),
-                        "backend": backend,
-                    }
-                )
-        except Exception:
-            pass
-
-    return gpus
 
 
 def get_llama_cpp_info() -> dict:
@@ -320,181 +203,8 @@ def get_llama_cpp_info() -> dict:
     return {"installed": installed, "version": version}
 
 
-def recommend_llama_build(cpu: dict, gpus: list[dict]) -> dict:
-    """Return the best llama.cpp build name and download URL for this machine."""
-    nvidia = next((g for g in gpus if g["vendor"] == "NVIDIA"), None)
-    amd = next((g for g in gpus if g["vendor"] == "AMD"), None)
-
-    if nvidia:
-        vram = nvidia["vram_gb"]
-        return {
-            "build": "CUDA (NVIDIA GPU)",
-            "flag": "cuda",
-            "reason": f"{nvidia['name']} {vram} GB VRAM → GPU acceleration via CUDA",
-            "pip": "pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124",
-            "note": "Fastest option — runs models entirely on GPU",
-        }
-    if amd:
-        return {
-            "build": "ROCm / Vulkan (AMD GPU)",
-            "flag": "rocm",
-            "reason": f"{amd['name']} → GPU acceleration via ROCm or Vulkan",
-            "pip": "pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/rocm",
-            "note": "Use ROCm for Linux; Vulkan backend works on Windows",
-        }
-    if cpu.get("avx512"):
-        return {
-            "build": "AVX-512 (CPU optimised)",
-            "flag": "avx512",
-            "reason": f"{cpu['name']} supports AVX-512 → fastest CPU inference",
-            "pip": 'CMAKE_ARGS="-DLLAMA_AVX512=on" pip install llama-cpp-python',
-            "note": "Best CPU performance on modern Intel/AMD processors with AVX-512",
-        }
-    if cpu.get("avx2"):
-        return {
-            "build": "AVX2 (CPU, recommended)",
-            "flag": "avx2",
-            "reason": f"{cpu['brand']} {cpu['cores']}-core CPU with AVX2 support",
-            "pip": "pip install llama-cpp-python",
-            "note": "Default pre-built wheel already uses AVX2 on Windows",
-        }
-    return {
-        "build": "CPU Basic (no AVX2)",
-        "flag": "cpu",
-        "reason": "No AVX2 detected — falling back to basic CPU build",
-        "pip": 'CMAKE_ARGS="-DLLAMA_AVX=on" pip install llama-cpp-python',
-        "note": "Performance will be limited; consider upgrading hardware",
-    }
-
-
-def scan_models(model_dirs: list[str]) -> list[dict]:
-    """Scan model directories for GGUF files."""
-    # Quantization types that require a special llama.cpp build and will fail to load
-    _INCOMPATIBLE_QUANT_SUFFIXES = ("i2_s", "i1", "i2", "i3")
-
-    models = []
-    seen = set()
-    for d in model_dirs:
-        if not os.path.isdir(d):
-            continue
-        try:
-            for fname in os.listdir(d):
-                if not fname.lower().endswith(".gguf"):
-                    continue
-
-                # Skip BitNet / exotic quant formats that llama-cpp-python can't load
-                stem = fname.lower().replace(".gguf", "")
-                if any(
-                    stem.endswith(f"-{q}") or f"_{q}." in fname.lower()
-                    for q in _INCOMPATIBLE_QUANT_SUFFIXES
-                ):
-                    print(f"[scan] SKIP incompatible quant: {fname}")
-                    continue
-
-                full_path = os.path.join(d, fname)
-                try:
-                    size_bytes = os.path.getsize(full_path)
-                except OSError:
-                    continue
-
-                # Skip tiny/partial files
-                if size_bytes < 50 * 1024 * 1024:
-                    continue
-
-                key = fname.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-
-                models.append(
-                    {
-                        "name": fname,
-                        "path": full_path,
-                        "size_gb": round(size_bytes / (1024**3), 2),
-                    }
-                )
-        except Exception:
-            pass
-
-    models.sort(key=lambda m: m["name"].lower())
-    return models
-
-
-def get_system_info(model_dirs: list[str]) -> dict:
-    """Return comprehensive system info."""
-    cpu = get_cpu_info()
-    memory_gb = get_memory_gb()
-    gpus = get_gpu_info()
-    llama = get_llama_cpp_info()
-    rec = recommend_llama_build(cpu, gpus)
-    models = scan_models(model_dirs)
-
-    return {
-        # Legacy fields (keep for backward compat)
-        "cpu_brand": cpu["brand"],
-        "cpu_count": cpu["cores"],
-        # Extended fields
-        "cpu_name": cpu["name"],
-        "cpu_avx2": cpu["avx2"],
-        "cpu_avx512": cpu["avx512"],
-        "memory_gb": round(memory_gb, 1),
-        "gpus": gpus,
-        "has_llama_cpp": llama["installed"],
-        "llama_cpp_version": llama["version"],
-        "recommended_build": rec,
-        "model_count": len(models),
-        "models": models,
-        "timestamp": time.time(),
-    }
-
-
-# ─ Token counting (actual tokenizer) ─────────────────────────────────────────
-
-# Shared lightweight tokenizer (loaded once, no model weights needed).
-# Falls back to a reasonable heuristic when llama_cpp is unavailable.
-_shared_tokenizer = None
-_tokenizer_lock = threading.Lock()
-
-
-def _get_tokenizer():
-    """Return a tokenizer callable(text→list[int]).  Thread-safe, lazy-loaded."""
-    global _shared_tokenizer
-    if _shared_tokenizer is not None:
-        return _shared_tokenizer
-
-    with _tokenizer_lock:
-        if _shared_tokenizer is not None:
-            return _shared_tokenizer
-
-        # Prefer tiktoken (fast, pure-Python, no model file needed)
-        try:
-            import tiktoken
-            enc = tiktoken.get_encoding("cl100k_base")
-            _shared_tokenizer = enc.encode
-            return _shared_tokenizer
-        except Exception:
-            pass
-
-        # Fallback: regex-based approximation (≈1.3 tokens per word)
-        _tok_re = re.compile(r"""'s|'t|'re|'ve|'m|'ll|'d| ?\w+| ?\d+| ?[^\s\w]+|\s+""")
-
-        def _regex_tokenize(text: str) -> list:
-            return _tok_re.findall(text)
-
-        _shared_tokenizer = _regex_tokenize
-        return _shared_tokenizer
-
-
-def count_tokens(text: str, model_path: str | None = None) -> int:
-    """Count tokens in *text* using the best available tokenizer.
-
-    Uses tiktoken or a regex approximation — never loads a model file
-    (too slow for inline use).
-    """
-    if not text:
-        return 0
-    tokenizer = _get_tokenizer()
-    return len(tokenizer(text))
+# ─ Alias for backward compat — tests call cb.scan_models() ──────────────────
+scan_models = scan_gguf_models
 
 
 # ─ Judge score extraction (robust, multi-fallback) ────────────────────────────
@@ -695,15 +405,16 @@ def get_system_info_cached(model_dirs: list[str]) -> dict:
     global _sysinfo_cache
     with _sysinfo_lock:
         if _sysinfo_cache is not None:
-            age = time.time() - _sysinfo_cache.get("timestamp", 0)
+            age = time.time() - _sysinfo_cache.get("_cache_ts", 0)
             if age < _SYSINFO_TTL:
                 # Refresh model list inline (fast) while keeping cached hw data
-                fresh_models = scan_models(model_dirs)
+                fresh_models = scan_gguf_models(model_dirs)
                 result = dict(_sysinfo_cache)
                 result["models"] = fresh_models
                 result["model_count"] = len(fresh_models)
                 return result
-        info = get_system_info(model_dirs)
+        info = get_system_info(model_dirs)  # wrapper already adds llama_cpp + timestamp
+        info["_cache_ts"] = time.time()
         _sysinfo_cache = info
         return info
 
