@@ -245,6 +245,19 @@ Open `tests/test_comparator.html` in a browser for the JS / DOM suite, including
 
 ---
 
+## Code Quality — X-Ray Scan (March 2026)
+
+| Metric | Value |
+|--------|-------|
+| Files scanned | 12 |
+| Rules checked | 42 |
+| HIGH severity | 15 (SEC-001: innerHTML XSS in HTML files, PY-005: json.load in tests) |
+| MEDIUM severity | 44 |
+| Note | SEC-001 findings are in the local-only HTML UI (no server-side rendering) |
+| Status | Acceptable for local-only tool |
+
+Run locally: `python -m xray . --dry-run`
+
 ## 📄 License
 
 MIT — see [LICENSE](LICENSE)
