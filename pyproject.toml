@@ -10,6 +10,9 @@ dependencies = [
     "zen-core-libs",
 ]
 
+[tool.uv.sources]
+zen-core-libs = { workspace = true }
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

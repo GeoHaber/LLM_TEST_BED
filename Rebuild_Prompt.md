@@ -1,661 +1,647 @@
 # Rebuild Prompt — Zen LLM Compare
 
-> A step-by-step prompt that any capable LLM can follow to rebuild the entire
-> application from zero. All file names, folder layout, dependencies, API
-> signatures, and sample I/O are given explicitly so there is **nothing to guess**.
+A precise, step-by-step specification that lets you rebuild the entire
+application from zero. Every requirement is actionable; nothing is assumed.
 
 ---
 
-## 0. Before You Begin
+## 1. What You Are Building
 
-| Prereq | Version |
-|--------|---------|
-| Python | ≥ 3.10 (tested on 3.13) |
-| pip | latest |
-| OS | Windows 10/11 (primary), Linux/macOS (supported) |
-| GPU | Optional — Vulkan-capable GPU (AMD, NVIDIA, Intel Arc) for acceleration |
-| Disk | ≥ 500 MB free for models |
+A local, desktop-class web application for comparing multiple GGUF language
+models side-by-side on a single prompt. It consists of two files:
+
+| File | Role |
+|------|------|
+| `comparator_backend.py` | Python HTTP server (~1 800 lines) |
+| `model_comparator.html` | Single-file SPA (~3 600 lines) |
+
+Supporting files:
+
+| File | Role |
+|------|------|
+| `requirements.txt` | Exact pinned dependencies |
+| `pyproject.toml` | Package metadata + tool settings |
+| `Run_me.bat` | Windows one-click launcher |
+| `tests/` | Pytest test suite |
 
 ---
 
-## 1. Folder Layout
+## 2. Exact Environment
 
-Create a single flat project directory with these files:
+```
+Python        3.10+ (tested on 3.12.10)
+OS            Windows 10/11 (Linux also works; bat file is Windows-only)
+llama-cpp-python  0.3.16
+psutil        7.2.1
+huggingface_hub   0.36.0
+tiktoken      (no version pin; install latest)
+py-cpuinfo    (no version pin; install latest)
+pytest        9.0.2
+```
+
+`requirements.txt`:
+```
+psutil==7.2.1
+huggingface_hub==0.36.0
+llama-cpp-python==0.3.16
+tiktoken
+py-cpuinfo
+```
+
+---
+
+## 3. Directory Layout
 
 ```
 LLM_TEST_BED/
-├── comparator_backend.py        # Python HTTP backend (~1850 lines)
-├── model_comparator.html        # Single-file SPA frontend (~3830 lines)
-├── _patch_catalog.py            # Utility: update MODEL_CATALOG in HTML
-├── Run_me.bat                   # Windows one-click launcher
-├── pyproject.toml               # Project metadata & tool config
-├── requirements.txt             # Pinned dependencies
-├── HOW_TO_USE.md                # Usage guide (consumed by Zena AI)
-├── LLM_COMPARE_2026.md          # Landscape analysis / spec
-├── README.md                    # Repo readme
-├── CHANGELOG.md                 # Release notes
-├── LICENSE                      # MIT License
+├── comparator_backend.py    ← backend server
+├── model_comparator.html    ← SPA frontend
+├── requirements.txt
+├── pyproject.toml
+├── Run_me.bat
+├── CHANGELOG.md
+├── README.md
+├── HOW_TO_USE.md
+├── _patch_catalog.py        ← patch helper for model catalog
 └── tests/
-    ├── conftest.py                 # Shared fixtures (app module import + rate limiter reset)
-    ├── test_bug_fixes.py           # 100 unit tests
-    ├── test_completeness_audit.py  # 78 spec-vs-implementation tests
-    ├── test_discovery_install.py   # 85 discovery / install / hardware tests
-    ├── test_xray_comprehensive.py  # 119 functional tests
-    ├── test_zombie_and_process_audit.py  # 21 process hygiene / daemon / connection error tests
-    ├── test_llm_integration.py     # Live inference integration test
-    └── test_comparator.html        # Browser Mocha test suite
-```
-
-**Important:** There are exactly **two source files** (backend + frontend). No
-framework, no build step, no node_modules. The HTML file includes Tailwind CSS
-via CDN. The backend serves it via Python's `http.server`.
-
----
-
-## 2. Install Dependencies
-
-```bash
-pip install psutil==7.2.1 huggingface-hub==0.36.0 llama-cpp-python==0.3.16 \
-    py-cpuinfo>=9.0 nvidia-ml-py3>=7.352 tiktoken>=0.5
-```
-
-For Vulkan GPU acceleration (AMD Radeon, Intel Arc):
-```bash
-pip install llama-cpp-python==0.3.16 --force-reinstall --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/vulkan
-```
-
-For CUDA (NVIDIA):
-```bash
-pip install llama-cpp-python==0.3.16 --force-reinstall --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
-```
-
-Dev tools:
-```bash
-pip install pytest>=8.0 ruff>=0.4 bandit>=1.7 pyright>=1.1
+    ├── conftest.py
+    ├── test_comprehensive.py
+    ├── test_bug_fixes.py
+    ├── test_full_validation.py
+    └── test_llm_integration.py
 ```
 
 ---
 
-## 3. Create `pyproject.toml`
+## 4. Backend: `comparator_backend.py`
 
-```toml
-[project]
-name = "zen-llm-compare"
-version = "0.1.0"
-description = "Local LLM model comparator with judge scoring and GPU acceleration"
-requires-python = ">=3.10"
-dependencies = [
-    "psutil==7.2.1",
-    "huggingface_hub==0.36.0",
-    "llama-cpp-python==0.3.16",
-]
-
-[project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.4", "bandit>=1.7", "pyright>=1.1"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E501"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-
-[tool.bandit]
-exclude_dirs = [".venv", "venv", "__pycache__", "node_modules", "tests"]
-skips = ["B603", "B607"]
-```
-
----
-
-## 4. Create `requirements.txt`
-
-```
-psutil==7.2.1
-huggingface-hub==0.36.0
-llama-cpp-python==0.3.16
-py-cpuinfo>=9.0
-nvidia-ml-py3>=7.352
-tiktoken>=0.5
-pytest>=7.0
-```
-
----
-
-## 5. Create `comparator_backend.py`
-
-This is a single Python file (~1850 lines) using only stdlib + the dependencies
-above. Follow these exact specifications:
-
-### 5.1 Imports & Globals
+### 4.1 Top-level Constants
 
 ```python
-import ipaddress, json, os, re, sys, threading, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
-from socketserver import ThreadingMixIn
-from typing import Any
-from urllib.parse import parse_qs, urlparse
+DEFAULT_INFERENCE_TIMEOUT = 120   # seconds per model
+MAX_INFERENCE_TIMEOUT     = 1800  # 30 min (reasoning models)
+MAX_PROMPT_TOKENS         = 4096
+PORT                      = 8123
+_DISCOVERY_TTL            = 900   # 15-minute HuggingFace cache TTL
 ```
 
-Set Vulkan env var before any llama_cpp import:
+### 4.2 Environment Setup (at import time, before llama_cpp import)
+
 ```python
 _vk_devices = os.environ.get('GGML_VK_VISIBLE_DEVICES', '0')
 os.environ['GGML_VK_VISIBLE_DEVICES'] = _vk_devices
 ```
 
-### 5.2 ThreadingHTTPServer
+### 4.3 ThreadingHTTPServer
 
 ```python
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 ```
 
-### 5.3 System Info Detection
+### 4.4 Hardware Detection Functions
 
-Create these functions:
+Implement each as a standalone top-level function. They must never raise;
+return safe defaults on error.
 
-| Function | Returns | Notes |
-|----------|---------|-------|
-| `get_cpu_count()` | `int` | `os.cpu_count()` with fallback to 1 |
-| `get_memory_gb()` | `float` | Via psutil; fallback 8.0 |
-| `get_cpu_info()` | `dict` | Keys: `brand`, `name`, `cores`, `avx2`, `avx512`. Try `py-cpuinfo`, fall back to `platform.processor()` and env vars |
-| `detect_gpus()` | `list[dict]` | Each dict: `name`, `vram_mb`, `type` ("nvidia"/"amd"/"integrated"). Try pynvml, then WMI, then `GGML_VK_VISIBLE_DEVICES` |
-| `recommend_build()` | `str` | Returns "vulkan", "cuda", or "cpu" based on detected GPUs |
-| `get_system_info()` | `dict` | Aggregates all above + scans models. Keys: `cpu_brand`, `cpu_count`, `cpu_name`, `cpu_avx2`, `memory_gb`, `gpus`, `recommended_build`, `has_llama_cpp`, `model_count`, `models`, `timestamp` |
+| Function | Signature | Returns |
+|----------|-----------|---------|
+| `get_cpu_count()` | `() -> int` | CPU core count; fallback `1` |
+| `get_memory_gb()` | `() -> float` | Total RAM GB via psutil; fallback `8.0` |
+| `get_cpu_info()` | `() -> dict` | `{brand, name, cores, avx2, avx512}` |
+| `get_gpu_info()` | `() -> list[dict]` | `[{name, vram_gb, api}]` per GPU |
+| `get_llama_cpp_info()` | `() -> dict` | `{installed: bool, version: str\|None}` |
+| `recommend_llama_build()` | `(cpu, gpus) -> dict` | `{build, pip, reason, note}` |
 
-### 5.4 Model Scanning
+`get_gpu_info()` detection priority:
+1. Try `nvidia-ml-py3` (`pynvml`) for NVIDIA.
+2. Fall back to `vulkaninfo` subprocess (AMD / Intel).
+3. Return `[]` on error.
 
-```python
-MODEL_DIRS = [str(Path.home() / "AI" / "Models")]
-INCOMPATIBLE_QUANTS = {"IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S"}
+`recommend_llama_build()` logic:
+- NVIDIA GPU found → recommend `CMAKE_ARGS="-DGGML_CUDA=on"`.
+- AMD/Intel GPU → recommend `GGML_VULKAN=1`.
+- CPU-only with AVX2 → recommend AVX2 build.
+- Fallback → plain CPU build.
+
+### 4.5 Model Scanning: `scan_models(model_dirs: list[str]) -> list[dict]`
+
+Rules (all must be enforced):
+1. Recursively walk every directory in `model_dirs`. Skip missing dirs silently.
+2. Accept only files ending in `.gguf` (case-insensitive).
+3. Skip files smaller than 50 MB (`size < 50 * 1024 * 1024`).
+4. Skip filenames matching incompatible quantization patterns (regex):
+   `r"[-_](i1|i2|i2_s|i2s|i3|i1_s|i1s)\.gguf$"` (case-insensitive).
+5. Deduplicate by basename — first occurrence wins.
+6. Sort result list alphabetically by `name` (case-insensitive).
+7. Each dict: `{name: str, path: str, size_gb: float}`.
+
+### 4.6 System Info: `get_system_info(model_dirs) -> dict`
+
+Returns one JSON-serialisable dict with ALL of these keys:
+
+```
+cpu_brand, cpu_count, cpu_name, cpu_avx2, cpu_avx512,
+memory_gb, gpus,
+has_llama_cpp, llama_cpp_version,
+recommended_build,          # {build, pip, reason, note}
+model_count, models,        # list from scan_models()
+timestamp                   # time.time()
 ```
 
-`scan_models()` → `list[dict]`:
-- Walk each dir in `MODEL_DIRS` recursively for `*.gguf` files
-- For each file return: `name`, `path`, `size_mb`, `quant` (extracted from filename, e.g., "Q4_K_M")
-- Skip files whose quant is in `INCOMPATIBLE_QUANTS`
-- Wrap each dir scan in try/except to handle missing directories
-
-### 5.5 Token Counting
+### 4.7 Token Counting: `count_tokens(text, model_path=None) -> int`
 
 ```python
-def count_tokens(text: str) -> int:
+import tiktoken
+_enc = None          # module-level, lazy-loaded
+_enc_lock = threading.Lock()
+
+def count_tokens(text: str, model_path=None) -> int:
+    global _enc
+    if not text:
+        return 0
+    with _enc_lock:
+        if _enc is None:
+            _enc = tiktoken.get_encoding("cl100k_base")
+    try:
+        return len(_enc.encode(text))
+    except Exception:
+        return len(re.findall(r'\S+', text))  # word-count fallback
 ```
-Use `tiktoken` with `cl100k_base` encoding. Fallback: `len(text) // 4`.
 
-### 5.6 Judge Score Extraction — 5-Layer Fallback
+### 4.8 Extract Judge Scores: `extract_judge_scores(raw_text: str) -> dict`
 
+Five-level fallback cascade. Always returns a dict with at least `overall` (0–10 float).
+
+| Level | Strategy |
+|-------|----------|
+| 1 | Extract JSON inside ` ```json … ``` ` or ` ``` … ``` ` fence |
+| 2 | `json.loads(raw_text.strip())` |
+| 3 | Find first `{` and last `}` → try `json.loads()` |
+| 4 | Find JSON with a nested `"evaluation"` key |
+| 5 | Regex NLP: look for `overall.*?(\d+(?:\.\d+)?)` in raw text |
+| 6 | Return `{"overall": 0}` |
+
+Score normalisation (apply after any successful parse):
+- String `"8/10"` → `8.0`
+- Clamp all numeric scores to `[0, 10]`
+- If parsed dict has no `overall` key, compute `mean(all numeric values)`
+
+Schema that `extract_judge_scores` must support (HOW_TO_USE §7):
+```json
+{
+  "overall":     0-10,
+  "accuracy":    0-10,
+  "reasoning":   0-10,
+  "instruction": 0-10,
+  "safety":      0-10,
+  "explanation": "string"
+}
+```
+
+### 4.9 Security: `validate_download_url(url: str) -> bool`
+
+Allowed domains (`_ALLOWED_DOWNLOAD_HOSTS`):
 ```python
-def extract_judge_scores(text: str) -> dict:
+{
+  "huggingface.co",
+  "cdn-lfs.huggingface.co",
+  "cdn-lfs-us-1.huggingface.co",
+  "github.com",
+  "objects.githubusercontent.com",
+  "releases.githubusercontent.com",
+  "gitlab.com",
+}
 ```
 
-Try each method in order, stop when `overall` is found:
+Checks (all must pass for `True`):
+1. Scheme is exactly `https`.
+2. `netloc` (host) is in `_ALLOWED_DOWNLOAD_HOSTS`.
+3. Resolve `netloc` → IP address; reject if private/loopback/link-local/multicast
+   (use `ipaddress.ip_address(...).is_private`, `.is_loopback`, etc.).
+4. Return `False` on any parse error.
 
-1. **JSON parse** — `json.loads(text)` or extract `{...}` from text  
-2. **Markdown fences** — find ````json ... ``` `` blocks, parse JSON
-3. **Brace extraction** — `re.search(r'\{[^{}]+\}', text)`, parse JSON
-4. **Regex NLP** — named patterns like `overall[\s:]+(\d+)`, `accuracy[\s:]+(\d+)`, etc.
-5. **Keyword fallback** — `score[:\s]*(\d+)` near "score" keyword
+### 4.10 Security: `_is_safe_model_path(path: str, model_dirs: list[str]) -> bool`
 
-If no `overall` but other scores exist, average them. Clamp all values to 0–10.
+1. If `path` is falsy → `False`.
+2. `resolved = Path(path).resolve()`.
+3. Extension must be exactly `.gguf`.
+4. `resolved` must be strictly under at least one resolved model dir (use
+   `resolved.is_relative_to(Path(d).resolve())`).
+5. Return `False` on any exception.
 
-### 5.7 URL & Path Validation
+### 4.11 Rate Limiter: `_RateLimiter`
 
-```python
-def validate_download_url(url: str) -> bool:
-```
-- Must start with `https://huggingface.co/` or `https://hf-mirror.com/`
-- Resolve the hostname and reject if it maps to a private/reserved IP (SSRF prevention)
-- Reject `localhost`, `127.x.x.x`, `10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`, link-local
-
-```python
-def safe_model_path(raw: str) -> str:
-```
-- Reject path traversal (`..`)
-- Reject paths outside `MODEL_DIRS`
-- Return the realpath if safe
-
-### 5.8 Rate Limiter
+Sliding-window per-IP rate limiter.
 
 ```python
 class _RateLimiter:
-    def __init__(self, max_requests=30, window_sec=60.0)
-    def allow(self, ip: str) -> bool
+    def __init__(self, max_requests: int = 30, window_sec: float = 60.0):
+        self._max = max_requests
+        self._window = window_sec
+        self._counts: dict[str, list[float]] = {}  # ip -> list of timestamps
+        self._lock = threading.Lock()
+
+    def allow(self, ip: str) -> bool:
+        """Return True and record the request if within limit."""
+        now = time.monotonic()
+        with self._lock:
+            window = self._counts.setdefault(ip, [])
+            # Remove expired
+            self._counts[ip] = [t for t in window if now - t < self._window]
+            if len(self._counts[ip]) >= self._max:
+                return False
+            self._counts[ip].append(now)
+            return True
+
+    def remaining(self, ip: str) -> int:
+        now = time.monotonic()
+        with self._lock:
+            window = [t for t in self._counts.get(ip, []) if now - t < self._window]
+            return max(0, self._max - len(window))
 ```
-Per-IP sliding window using `collections.deque`.
 
-### 5.9 HTTP Handler — `ComparatorHandler(BaseHTTPRequestHandler)`
+Module-level singleton:
+```python
+_rate_limiter = _RateLimiter(max_requests=30, window_sec=60)
+```
 
-CORS: Only allow `Origin` matching `localhost` (http://localhost:*, http://127.0.0.1:*).
-Do NOT use `Access-Control-Allow-Origin: *`.
+### 4.12 Model Discovery: `_discover_hf_models(query, sort, limit) -> list[dict]`
 
-Rate limit check on every request. Return 429 JSON if exceeded.
+- Minimum TTL cache (`_discovery_cache` dict, `_DISCOVERY_TTL = 900` seconds).
+- Calls `huggingface_hub.list_models(...)` filtered to GGUF format.
+- Only includes repos from `_TRUSTED_QUANTIZERS`:
+  `{"bartowski", "TheBloke", "unsloth", "lmstudio-community",
+    "QuantFactory", "second-state", "MaziyarPanahi"}`.
+- Returns list of dicts: `{id, name, downloads, likes, tags, url}`.
+- Returns `[]` on any network error (must not raise).
 
-#### GET Endpoints
+### 4.13 ComparatorHandler (HTTP routing)
 
-| Path | Response |
-|------|----------|
-| `/` or `/index.html` | Serve `model_comparator.html` from same directory |
-| `/__health` | `{"ok": true}` |
-| `/__system-info` | Full system detection (see 5.3) |
-| `/__config` | `{"vk_devices", "default_inference_timeout", "max_inference_timeout", "max_prompt_tokens", "rate_limit"}` |
-| `/__download-status?job_id=X` | Download job progress |
-| `/__install-status` | llama-cpp-python install progress |
-| `/__discover-models?q=...&sort=...&limit=...` | HuggingFace GGUF search (cached 15 min) |
-| `/__chat/history` | Return chat history from `_chat_history` list |
+All endpoint paths listed below. Each MUST:
+- Set CORS headers on every response.
+- Apply rate limiting (check `_rate_limiter.allow(client_ip)`).
 
-#### POST Endpoints (read JSON body, enforce Content-Length ≤ 10 MB)
+#### CORS Headers
 
-| Path | Body Fields | Response |
-|------|-------------|----------|
-| `/__comparison/mixed` | `prompt`, `system_prompt`, `local_models[]`, `online_models[]`, `judge_model`, `judge_system_prompt`, `max_tokens`, `temperature`, `n_ctx`, `top_p`, `repeat_penalty`, `inference_timeout` | Ranked results with judge scores |
-| `/__comparison/stream` | Same as above | SSE text/event-stream |
-| `/__chat` | `model_path`, `system`, `messages[]`, `max_tokens`, `temperature` | `{"response": "..."}` |
-| `/__download-model` | `model` (URL), `dest` (dir) | `{"ok": true, "job_id": "..."}` |
-| `/__install-llama` | (empty body) | Triggers pip install in background |
+Allowed origins (exact match, case-insensitive):
+```
+localhost (any port), 127.0.0.1 (any port), ::1 (any port), "null"
+```
 
-### 5.10 Comparison Engine
+On match, respond:
+```
+Access-Control-Allow-Origin: <matched origin>
+Vary: Origin
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, X-Requested-With
+```
 
-`_handle_comparison(data)`:
-1. Validate prompt is not empty
-2. Count tokens; reject if > `MAX_PROMPT_TOKENS` (8192)
-3. For each model in `local_models`, sequentially:
-   a. Load with `llama_cpp.Llama(model_path, n_ctx, n_gpu_layers=-1, verbose=False)`
-   b. Record RAM before/after via psutil
-   c. Call `model.create_completion(prompt, max_tokens, temperature, top_p, repeat_penalty, stream=False)`
-   d. Record: `response`, `time_ms`, `tokens`, `tokens_per_sec`, `ttft_ms`, `ram_delta_mb`
-   e. Unload model explicitly with `del model`
-4. If `judge_model` provided, run `_run_judge()` for each response
-5. Rank by `judge_score` descending (or `tokens_per_sec` if no judge)
+OPTIONS preflight → 204 No Content with above headers.
 
-`_run_judge(judge_path, prompt, response, system_prompt)`:
-- **Dual-pass position bias mitigation** (Zheng et al., NeurIPS 2023):
-  - Pass 1: Present response in original order
-  - Pass 2: Shuffle/randomize order
-  - Average both passes' scores
-- Load judge model, generate, extract via `extract_judge_scores()`
-- Return dict with `overall`, `accuracy`, `reasoning`, `instruction`, `safety`, `explanation`, `bias_passes`
+Do NOT set `Access-Control-Allow-Origin: *`.
 
-### 5.11 SSE Streaming
+#### Endpoint Table
 
-`_handle_stream_comparison(data)`:
-- Set `Content-Type: text/event-stream`, `Cache-Control: no-cache`
-- For each model, stream events:
-  - `event: model_start\ndata: {"model": "...", "index": N}\n\n`
-  - `event: token\ndata: {"token": "...", "index": N}\n\n` (per generated token)
-  - `event: model_done\ndata: {...stats...}\n\n`
-- After all models, if judge: `event: judge_start` → `event: judge_done`
-- Final: `event: done\ndata: {...full results...}\n\n`
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| GET | `/__health` | `_handle_health` | `{ok: true, ts: float}` |
+| GET | `/__system-info` | `_handle_system_info` | Full hardware + model dict |
+| GET | `/__config` | `_handle_config` | Timeout/rate constants |
+| GET | `/__discover-models` | `_handle_discover_models` | HF model search |
+| GET | `/__download-status` | `_handle_download_status` | Job state |
+| GET | `/__install-status` | `_handle_install_status` | Job state |
+| POST | `/__comparison/mixed` | `_handle_comparison` | Blocking comparison |
+| POST | `/__comparison/stream` | `_handle_stream_comparison` | SSE streaming |
+| POST | `/__chat` | `_handle_chat` | Single-turn chat |
+| POST | `/__download-model` | `_handle_download_model` | Enqueue download |
+| POST | `/__install-llama` | `_handle_install_llama` | Enqueue pip install |
+| GET | `/` | serve HTML | Return `model_comparator.html` |
+| * | anything else | 404 | `{error: "Not found"}` |
 
-### 5.12 Download Worker
+#### `/__config` Response Shape
 
-`_run_download(job_id, model, dest)`:
-- If URL contains `huggingface.co` with a direct file path, download via `huggingface_hub.hf_hub_download(repo_id, filename, local_dir=dest)`
-- Otherwise, use `huggingface_hub.hf_hub_download` with extracted repo_id and filename
-- Update `_download_jobs[job_id]` dict with state/progress/path/error
-- Support both direct URLs and `repo_id/filename` patterns
+```json
+{
+  "default_inference_timeout": 120,
+  "max_inference_timeout": 1800,
+  "max_prompt_tokens": 4096,
+  "rate_limit": {"max_requests": 30, "window_sec": 60},
+  "vk_devices": "0"
+}
+```
 
-### 5.13 Chat Handler
+#### `/__comparison/mixed` Request / Response
 
-`_handle_chat(data)`:
-- Load model from `model_path`
-- Build messages array (system + user messages)
-- Generate with `model.create_chat_completion(messages, max_tokens, temperature)`
-- Return `{"response": "..."}`
-- Append to `_chat_history` list
+Request:
+```json
+{
+  "prompt":        "string",
+  "local_models":  ["path/a.gguf", "path/b.gguf"],
+  "online_models": [],
+  "judge_model":   "path/judge.gguf or local:best",
+  "judge_system_prompt": "custom or empty string",
+  "n_ctx":         4096,
+  "max_tokens":    512,
+  "temperature":   0.7,
+  "timeout":       120
+}
+```
 
-### 5.14 Server Startup
+Response:
+```json
+{
+  "prompt":    "string",
+  "timestamp": 1234567890.0,
+  "responses": [
+    {
+      "model":     "basename.gguf",
+      "text":      "model output",
+      "time_ms":   1234,
+      "ttft_ms":   456,
+      "tokens_out": 64,
+      "tps":        7.4,
+      "ram_delta_mb": 2048,
+      "error":      null
+    }
+  ],
+  "judge": {
+    "model":  "judge_basename.gguf",
+    "scores": [
+      {
+        "model":       "basename.gguf",
+        "overall":     8.0,
+        "accuracy":    7.0,
+        "reasoning":   9.0,
+        "instruction": 8.0,
+        "safety":      9.0,
+        "explanation": "string"
+      }
+    ],
+    "error": null
+  }
+}
+```
+
+Safety rules for `_handle_comparison`:
+1. Validate prompt token count ≤ `MAX_PROMPT_TOKENS`. If exceeded → 400.
+2. Filter `local_models` through `_is_safe_model_path` → `safe_models`.
+3. If `judge_model` specified, resolve via `_resolve_judge_path(judge_model, safe_models)`.
+4. Also run `_is_safe_model_path(judge_path, self.model_dirs)` on the resolved path.
+5. If judge path fails safety check, skip judge (do not raise).
+
+#### `/__comparison/stream` (SSE)
+
+Same request body as `/mixed`.
+
+Response: `Content-Type: text/event-stream`.
+Emit newline-delimited SSE events:
+
+| Event | Data |
+|-------|------|
+| `model_start` | `{"model": "name.gguf"}` |
+| `token` | `{"model": "name.gguf", "text": "chunk"}` |
+| `model_done` | `{"model": "name.gguf", "time_ms":…, "ttft_ms":…, "tokens_out":…, "tps":…, "ram_delta_mb":…}` |
+| `judge_start` | `{"model": "judge.gguf"}` |
+| `judge_done` | `{"scores": […]}` |
+| `done` | `{}` |
+
+SSE format per event:
+```
+event: <event_name>\ndata: <json_string>\n\n
+```
+
+#### `/__chat` Request
+
+```json
+{
+  "model_path": "/path/to/model.gguf",
+  "messages":   [{"role": "user", "content": "hello"}],
+  "n_ctx":      4096,
+  "max_tokens": 512,
+  "temperature": 0.7
+}
+```
+
+Response: `{text: "...", tokens_out: N, time_ms: N}` or 400 on error.
+
+Validate `model_path` with `_is_safe_model_path` before use.
+
+#### `/__install-llama` Security
+
+Only allow pip commands that start with exactly:
+```
+pip install llama-cpp-python
+```
+(with optional additional flags, but NOT other packages). Return 400 otherwise.
+
+#### `_resolve_judge_path(judge_model, safe_models) -> str | None`
+
+- `"local:best"` → `max(safe_models, key=os.path.getsize, default=None)`.
+- Exact basename match in `safe_models`.
+- Direct path existence check (`os.path.exists(judge_model)`).
+- Otherwise `None`.
+
+#### `_run_judge(prompt, responses, judge_path, judge_system_prompt)`
+
+1. If `judge_system_prompt` is empty, use the fallback:
+   ```
+   Rate each AI response to the given prompt. Return ONLY valid JSON:
+   {"overall": 0-10, "accuracy": 0-10, "reasoning": 0-10,
+    "instruction": 0-10, "safety": 0-10, "explanation": "brief rationale"}
+   ```
+2. Build judge input: concatenate all model responses with labels.
+3. Run inference **twice** with swapped response order (position-bias mitigation, NeurIPS 2023).
+4. Average the two score sets before returning.
+5. Retry once on failure.
+
+### 4.14 Model Directory
 
 ```python
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
-server = ThreadingHTTPServer(("127.0.0.1", PORT), ComparatorHandler)
-print(f"Serving on http://127.0.0.1:{PORT}")
-server.serve_forever()
+_DEFAULT_MODEL_DIR = Path.home() / "AI" / "Models"
+MODEL_DIR = Path(os.environ.get("ZENAI_MODEL_DIR", str(_DEFAULT_MODEL_DIR)))
+```
+
+### 4.15 Entry Point
+
+```python
+def run_server(port: int = 8123):
+    server = ThreadingHTTPServer(("127.0.0.1", port), ComparatorHandler)
+    print(f"[ZenAI] Server running at http://127.0.0.1:{port}")
+    server.serve_forever()
+
+if __name__ == "__main__":
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
+    run_server(port)
 ```
 
 ---
 
-## 6. Create `model_comparator.html`
+## 5. Frontend: `model_comparator.html`
 
-Single-file SPA. No build step. ~3700 lines.
+Single self-contained HTML file. No build step. No external JS frameworks.
+CSS via Tailwind CDN only.
 
-### 6.1 Head Section
+### 5.1 Global JS Variables / Constants
 
-```html
-<!DOCTYPE html>
-<html class="dark" lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Test LLMs</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+| Name | Type | Description |
+|------|------|-------------|
+| `BACKEND_URL` | `const` | `"http://127.0.0.1:8123"` |
+| `_QUESTION_BANK` | `const` | 32 test prompts in 6 categories |
+| `_MODEL_CATALOG` | `const` | 50+ GGUF model descriptors |
+| `_SCENARIOS` | `const` | Preset scenarios (stress test, etc.) |
+
+### 5.2 Question Bank
+
+32 questions across 6 categories. Each entry:
+```js
+{ q: "the prompt text", cat: "category_id", lang: "en" }
 ```
 
-Tailwind config:
-- Dark mode: `"class"` on `<html>`
-- Primary color: `#6366f1` (Indigo)
-- Font: Inter
+Categories:
+- `ops` — Operational / logistics
+- `emergency` — Emergency medicine
+- `cardiology` — Cardiology
+- `coding` — Code generation
+- `reasoning` — Logical reasoning
+- `multilingual` — Non-English prompts
 
-### 6.2 Layout (CSS Grid/Flex)
+### 5.3 Required UI Sections
 
-Three-region layout:
-1. **Left sidebar** (~280px): System status, model checkboxes, judge config, parameters
-2. **Main area** (flex-1): Results table, streaming cards, Zena chat
-3. **Tabs at top of sidebar**: Comparator | Zena | Model Library | Downloads | Discover
+| Section | Feature |
+|---------|---------|
+| Left sidebar | Model checklist (populated from `/__system-info`) |
+| Prompt area | Textarea + "Question Bank" chip row |
+| Judge config | Template selector (5 templates), model picker |
+| Comparison results | One card per model: text + metrics |
+| Metrics bar | Champion stats: fastest TTFT, best quality, fastest TPS, smallest delta |
+| Judge panel | Score table for all 5 fields |
+| Leaderboard | ELO table (persisted in localStorage) |
+| Run history | List of past runs (localStorage) |
+| Zena chat | Overlay and/or inline chat bar calling `/__chat` |
+| Discovery panel | HuggingFace model search calling `/__discover-models` |
+| Monkey Mode | Random question + random models button |
+| Batch mode | Run N prompts in sequence |
+| CSV export | Download results as CSV |
+| Share report | Copy URL+JSON to clipboard |
+| Dark mode | Toggle via class on `<html>` |
+| Language switcher | EN / HE / AR / ES / FR / DE; RTL for HE and AR |
 
-### 6.3 Sidebar Components
+### 5.4 Judge Templates (5 required)
 
-| Component | HTML ID | Purpose |
-|-----------|---------|---------|
-| System status | `systemStatus` | Shows CPU/RAM/GPU info from `/__system-info` |
-| Model checkboxes | `modelCheckboxes` | Populated from `/__system-info` models array |
-| Judge model dropdown | `judgeModel` | Select a model to use as judge |
-| Judge template dropdown | `judgeTemplate` | Values: `medical`, `general`, `coding`, `reasoning`, `multilingual` |
-| Prompt textarea | `prompt` | User's test prompt |
-| System prompt textarea | `systemPrompt` | System instruction |
-| Parameter sliders | `maxTokens`, `temperature`, `topP`, `repeatPenalty`, `inferenceTimeout`, `nCtx` | With live value display |
-| Question bank chips | `questionBank` | Chips: 🚨 Emergency, 🏥 Ops, ❤️ Cardiology, 💻 Coding, 🧠 Reasoning, 🌍 Multilingual, 🎲 Random |
-| Scenario presets | below question bank | Chips: 💻 Code Review, 🧠 Logic Duel, 🌍 Polyglot, ⚡ Speed Run, 🩺 Clinical, 🎲 Surprise |
+| # | Name | Focus |
+|---|------|-------|
+| 1 | Medical/Clinical | Patient safety, accuracy |
+| 2 | Research | Methodological rigour |
+| 3 | Code Review | Correctness, security, style |
+| 4 | Creative Writing | Originality, coherence |
+| 5 | General | Balanced 5-field scoring |
 
-### 6.4 Key JavaScript Functions (60+)
+### 5.5 Streaming (SSE)
 
-#### System & Init
-- `checkSystemStatus()` — Fetch `/__system-info`, populate sidebar, show/hide GPU info
-- `populateModelLibrary()` — Build model library grid from `MODEL_CATALOG` object
-- `escHtml(str)` — XSS-safe HTML escaping (replace `&`, `<`, `>`, `"`, `'`)
-
-#### Comparison
-- `runComparison()` — Main entry: collect form data, POST to `/__comparison/mixed` or stream
-- `_runStreamComparison(payload)` — Open EventSource to `/__comparison/stream`, process SSE
-- `_showStreamingUI()` — Create streaming card UI for each model
-- `_handleStreamEvent(event)` — Route `model_start|token|model_done|judge_start|judge_done|done`
-- `displayResults(data)` — Render results table with 12 columns
-
-#### ELO & History
-- `_updateElo(results)` — Update ELO ratings from comparison results (K=32)
-- `_renderLeaderboard()` — Draw leaderboard table from ELO data in localStorage
-- `_saveToHistory(results)` — Persist run to localStorage `lc_history`
-- `_shareReport()` — Generate shareable JSON blob from latest results
-
-#### Batch Mode
-- `_runBatch()` — Run comparisons across multiple prompts sequentially
-- Progress tracking with abort capability
-
-#### Model Library & Downloads
-- `MODEL_CATALOG` — Object mapping model names to `{repo, file, size, quant, bestFor, params}` (~50 models)
-- `_modelFitness(model)` — Score 0–100 for how well a model fits current hardware
-- `downloadModel(repo, file)` — POST to `/__download-model`, start progress polling
-- `switchRepo(tab, el)` — Switch between "Featured", "HuggingFace", "Discover" tabs in download modal
-
-#### Discovery System
-- `runDiscoverSearch()` — Fetch `/__discover-models`, render results
-- `renderDiscoverResults(models)` — Build discover results grid
-
-#### Zena Chat
-- `sendZenaMessage()` — POST to `/__chat` with conversation history
-- Markdown rendering in chat bubbles
-
-#### Scenarios & Question Bank
-```javascript
-const _SCENARIOS = {
-  code_review: { name:'Code Review', prompt:'...', system:'...', judgeTemplate:'coding', temp:0.1, maxTok:1024 },
-  logic_duel:  { name:'Logic Duel', prompt:'...', system:'...', judgeTemplate:'reasoning', temp:0.3, maxTok:512 },
-  polyglot:    { name:'Polyglot', ... },
-  speed_run:   { name:'Speed Run', ... },
-  clinical:    { name:'Clinical Showdown', judgeTemplate:'medical', ... },
-  surprise:    { name:'Surprise Me', ... },
-};
-
-const _QUESTION_BANK = {
-  ops: [{q:"...", sys:"..."}, ...],       // 5 questions
-  emergency: [...],                        // 6 questions
-  cardiology: [...],                       // 5 questions
-  coding: [...],                           // 6 questions
-  reasoning: [...],                        // 5 questions
-  multilingual: [...],                     // 5 questions
-};
+```js
+const evtSource = new EventSource(...) -- use fetch + ReadableStream
+// Pattern:
+const resp = await fetch(BACKEND_URL + "/__comparison/stream", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload),
+});
+// Read the stream line by line, parse "event: X\ndata: Y\n\n" blocks.
 ```
-`loadScenario(key)` — Populate all form fields from scenario config.
-`loadQuestion(topic)` — Pick random question from bank, fill prompt + system prompt.
 
-### 6.5 Results Table Columns
+On each event type, update the corresponding model card in real time.
 
-| # | Column | Source |
-|---|--------|--------|
-| 1 | Rank | Sorted by judge score or tokens/sec |
-| 2 | Model | File name (without .gguf) |
-| 3 | Response | Truncated text (expandable) |
-| 4 | Judge Score | Overall 0–10 with color coding |
-| 5 | Accuracy | 0–10 |
-| 6 | Reasoning | 0–10 |
-| 7 | Time (ms) | Inference wall time |
-| 8 | Tokens | Generated token count |
-| 9 | Tok/s | Tokens per second |
-| 10 | TTFT (ms) | Time to first token |
-| 11 | RAM Δ (MB) | Memory delta during inference |
-| 12 | Details | Expandable judge explanation |
+### 5.6 ELO System
 
-### 6.6 Security
+```js
+const K = 32;
+function updateElo(winner, loser, eloTable) {
+    const Ew = 1 / (1 + Math.pow(10, (eloTable[loser] - eloTable[winner]) / 400));
+    eloTable[winner] += K * (1 - Ew);
+    eloTable[loser]  -= K * (1 - Ew);
+}
+// Persist as JSON in localStorage under key "zai_elo"
+```
 
-- All user-supplied text rendered via `escHtml()` — never `innerHTML` with raw data
-- Dark mode toggle persisted in localStorage
-- No cookies, no external analytics
+### 5.7 XSS Prevention
+
+Every string rendered as HTML must go through `escHtml()`:
+```js
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+```
 
 ---
 
-## 7. Create `Run_me.bat`
+## 6. `Run_me.bat`
 
-```batch
+```bat
 @echo off
-title Zen LLM Compare
-echo Starting backend on port 8123...
-
-start "" python comparator_backend.py
-set BACKEND_PID=
-for /f "tokens=2" %%a in ('tasklist /fi "imagename eq python.exe" /fo list ^| findstr /i "PID"') do set BACKEND_PID=%%a
-
-timeout /t 2 /nobreak >nul
-start "" http://localhost:8123
-
-echo.
-echo Press any key to stop the server...
-pause >nul
-
-if defined BACKEND_PID (
-    taskkill /PID %BACKEND_PID% /F >nul 2>&1
-)
+echo Starting Zen LLM Compare...
+python -m pip install -r requirements.txt --quiet
+python comparator_backend.py
 ```
 
 ---
 
-## 8. Create `tests/conftest.py`
+## 7. Tests
 
-```python
-import importlib, sys
-from pathlib import Path
+### 7.1 `tests/conftest.py`
 
-def _load_app():
-    root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(root))
-    return importlib.import_module("comparator_backend")
+Empty or minimal fixture definitions shared across test modules.
 
-app = _load_app()
+### 7.2 Running Tests
+
 ```
+# All fast tests (no GGUF models needed):
+pytest tests/ --ignore=tests/test_llm_integration.py -v
+
+# Full suite (requires GGUF models in ~/AI/Models):
+pytest tests/ -v
+
+# New validation suite only:
+pytest tests/test_full_validation.py -v
+```
+
+### 7.3 Test Coverage Required
+
+| Group | What to test |
+|-------|-------------|
+| HTTP endpoints | Every documented endpoint returns correct status + schema |
+| CORS | Localhost allowed, external blocked, Vary header present |
+| SSRF | All private IPs, loopback, file://, HTTP blocked |
+| Path traversal | `..` sequences, wrong extensions |
+| Rate limiter | Exact boundary, per-IP isolation, thread safety |
+| Judge scores | All 6 fallback levels, clamp, float, Unicode |
+| Model scanning | Skip tiny, skip incompatible quants, dedup, sort |
+| Judge security | Uses `safe_models`, not raw `local_models` |
+| Prompt schema | Fallback uses 0-10, not bool/string |
 
 ---
 
-## 9. Create Test Files
+## 8. Common Mistakes to Avoid
 
-### 9.1 `tests/test_bug_fixes.py` — 100 unit tests
-
-Test classes to include:
-
-| Class | Tests | What it validates |
-|-------|-------|-------------------|
-| `TestTokenCounting` | ~6 | `count_tokens()` with various inputs including empty, unicode, long text |
-| `TestCORS` | ~6 | Localhost allowed, external origins rejected, preflight OPTIONS |
-| `TestJudgeRetry` | ~8 | 5-layer extraction: JSON, markdown fences, braces, regex NLP, keyword |
-| `TestURLValidation` | ~10 | SSRF prevention: private IPs, localhost, valid HF URLs |
-| `TestRateLimiter` | ~5 | Allow up to 30 requests, block 31st, window expiry |
-| `TestInferenceTimeout` | ~4 | Timeout signal handling |
-| `TestConfigEndpoint` | ~4 | `/__config` response structure |
-| `TestMultiGPU` | ~6 | `detect_gpus()`, Vulkan env handling |
-| `TestJudgeBias` | ~8 | Dual-pass randomization, score averaging |
-| `TestSSEStreaming` | ~8 | Event format, model_start/token/done events |
-| `TestFrontendEnhancements` | ~15 | HTML contains required elements (IDs, classes, functions) |
-| `TestModelDiscovery` | ~10 | HuggingFace search, caching, error handling |
-
-### 9.2 `tests/test_xray_comprehensive.py` — 119 functional tests
-
-Full-coverage validation of every feature. See test file for details.
-
-### 9.3 `tests/test_completeness_audit.py` — 78 spec-vs-implementation tests
-
-Confirms the documented feature set is actually present across the backend and UI.
-
-### 9.4 `tests/test_discovery_install.py` — 85 discovery / install / hardware tests
-
-Covers:
-1. Hugging Face GGUF discovery and caching
-2. CPU/GPU detection and llama.cpp build recommendation
-3. `__install-llama` and `__download-status` endpoint validation
-4. Local model scanning and model-card data completeness
-
-### 9.5 `tests/test_llm_integration.py` — Live inference test
-
-Requires an actual GGUF model on disk. Tests:
-1. Unit functions (system info, model scanning, token counting)
-2. HTTP endpoints (start server, GET /__system-info, POST /__comparison/mixed)
-3. Full LLM inference (load model, generate, verify output)
-
-Run separately: `python tests/test_llm_integration.py`
-
-### 9.6 `tests/test_zombie_and_process_audit.py` — 21 process hygiene tests
-
-Validates:
-1. **Daemon threads** — All background threads (`ThreadingHTTPServer`, download workers, install workers, cache warmup) use `daemon=True`
-2. **Port binding** — Server binds to `127.0.0.1`, not `0.0.0.0`
-3. **Connection error handling** — All write operations catch `ConnectionAbortedError`, `ConnectionResetError`, `BrokenPipeError`, `OSError`
-4. **Server lifecycle** — Test ports are free, cache thread is daemon
-5. **Model browser cleanup** — No GitHub tab in download modal (removed in favour of HuggingFace + Discover + ModelScope)
-6. **Loading spinners** — Discover grid, catalog grid, and download button have loading indicators
-
----
-
-## 10. Run & Verify
-
-### Build Commands
-
-```bash
-# Run the main fast suites (no model weights needed)
-python -m pytest tests/test_bug_fixes.py tests/test_xray_comprehensive.py tests/test_completeness_audit.py tests/test_discovery_install.py -v
-
-# Run the full Python suite
-python -m pytest tests/ -v --tb=short
-
-# Lint
-ruff check .
-ruff format --check .
-
-# Security scan
-bandit -r comparator_backend.py
-
-# Type check
-pyright comparator_backend.py
-```
-
-### Expected Output
-
-```
-tests/test_bug_fixes.py            — 100 passed
-tests/test_xray_comprehensive.py   — 119 passed
-tests/test_completeness_audit.py   —  78 passed
-tests/test_discovery_install.py    —  85 passed
-tests/test_zombie_and_process_audit.py — 21 passed
-tests/test_llm_integration.py      —   3 passed (requires model)
-─────────────────────────────────────────────────
-TOTAL                                406 passed, 3 warnings
-```
-
-### Manual Smoke Test
-
-1. `python comparator_backend.py` → should print `Serving on http://localhost:8123`
-2. Open `http://localhost:8123` → should see the UI with dark theme
-3. Sidebar should populate with system info and any detected models
-4. Place a `.gguf` file in `~/AI/Models/` → should appear after scan
-5. Select 2 models, enter a prompt, click ▶ Run → should see streaming results
-6. Judge scores should appear if a judge model is selected
-
-### Sample API Calls
-
-```bash
-# Health check
-curl http://localhost:8123/__health
-# → {"ok": true}
-
-# System info
-curl http://localhost:8123/__system-info
-# → {"cpu_brand":"AMD","cpu_count":16,"memory_gb":31.2,"gpus":[{"name":"Radeon RX 7900 XTX","vram_mb":24560,"type":"amd"}],...}
-
-# Run comparison
-curl -X POST http://localhost:8123/__comparison/mixed \
-  -H "Content-Type: application/json" \
-  -H "Origin: http://localhost:8123" \
-  -d '{"prompt":"What is 2+2?","local_models":["C:\\AI\\Models\\model.gguf"],"max_tokens":64}'
-# → {"prompt":"What is 2+2?","models_tested":1,"responses":[{...}]}
-
-# Download a model
-curl -X POST http://localhost:8123/__download-model \
-  -H "Content-Type: application/json" \
-  -H "Origin: http://localhost:8123" \
-  -d '{"model":"https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_M.gguf","dest":"C:\\AI\\Models"}'
-# → {"ok":true,"job_id":"a1b2c3d4"}
-```
-
----
-
-## 11. Key Design Decisions (Why This Architecture)
-
-1. **Two files, zero build step** — Anyone can `python backend.py` + open browser. No npm, no webpack.
-2. **Vanilla JS + Tailwind CDN** — No React/Vue/Svelte to learn. Tailwind via CDN means no purge step.
-3. **ThreadingHTTPServer** — One thread per request. Inference blocks its thread but not the UI.
-4. **Sequential model loading** — Only one GGUF model in VRAM at a time. Prevents OOM.
-5. **Dual-pass judge** — Randomize response order across two passes to cancel position bias.
-6. **5-layer score extraction** — LLMs are unpredictable in output format. Each layer catches a different failure mode.
-7. **CORS restricted to localhost** — This is a local tool, not a public service.
-8. **SSRF defense on downloads** — URLs resolve to HuggingFace only. Private IPs rejected.
-9. **Rate limiter** — 30 req/min per IP. Prevents accidental infinite loops in frontend.
-10. **Vulkan as default GPU backend** — Works on AMD, NVIDIA, and Intel Arc. CUDA is optional.
-
----
-
-## 12. Common Pitfalls to Avoid
-
-- **Do NOT** use `Access-Control-Allow-Origin: *`. Only allow `localhost` origins.
-- **Do NOT** load multiple GGUF models simultaneously — they can each consume 4–16 GB VRAM.
-- **Do NOT** use `innerHTML` with unescaped user data — always pass through `escHtml()`.
-- **Do NOT** use `subprocess.run(shell=True)` — the install handler must use `shell=False`.
-- **Do NOT** serve on `0.0.0.0` in production. This is a local development tool only.
-- **Do NOT** forget to `del model` after inference — llama-cpp-python does not auto-release VRAM.
-- **Do NOT** hardcode model paths — always use `MODEL_DIRS` and dynamic scanning.
-
-### 12.1 Connection Error Handling (Critical)
-
-Every place the backend writes to `self.wfile` or sends headers must be wrapped in:
-```python
-except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError):
-    pass
-```
-This prevents stack traces when a browser tab is closed mid-response. Applies to:
-- `_send_json()` — the main JSON response helper
-- `do_OPTIONS()` — CORS preflight
-- `_sse()` — SSE event streaming
-- Static file serving in `do_GET`
-- `log_message()` — suppress broken-pipe logging noise
+1. **Do NOT use `local_models` for judge path resolution** — always use
+   `safe_models` (the output of `_is_safe_model_path` filter).
+2. **Do NOT set `Access-Control-Allow-Origin: *`** — echo the exact origin.
+3. **Do NOT skip `_is_safe_model_path` on the judge path** — even if the
+   judge model came from `safe_models`, re-validate before loading.
+4. **Judge fallback prompt must use 0-10 integer scale** for all 5 fields —
+   never `true/false` or `"safe"/"unsafe"`.
+5. **Model scan: 50 MB minimum** — the user may have partial/incomplete
+   downloads; ignore them.
+6. **`count_tokens` must be thread-safe** — the tiktoken encoder is lazy-loaded
+   under a lock.
+7. **SSE content-type header** must be `text/event-stream` with
+   `Cache-Control: no-cache` before any data is written.
+8. **Default port is 8123** — hard-require this in tests and bat file.
+9. **Model directory** — use `Path.home() / "AI" / "Models"`, not
+   `C:\AI\Models`. Document as `~/AI/Models`.
+10. **`escHtml()` on all user-visible LLM output** — LLM text is untrusted.

@@ -21,6 +21,7 @@ import ipaddress
 import json
 import os
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -30,21 +31,8 @@ from socketserver import ThreadingMixIn
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-# ── zen_core_libs imports (replaces ~300 lines of duplicated code) ────────────
-from zen_core_libs.common import (
-    count_tokens,
-    get_cpu_count,
-    get_cpu_info,
-    get_memory_gb,
-    get_system_info as _zcl_get_system_info,
-    scan_gguf_models,
-)
-from zen_core_libs.common.system import (
-    GPUInfo,
-    get_gpu_info as _zcl_get_gpu_info,
-    recommend_llama_build as _zcl_recommend_llama_build,
-)
-from zen_core_libs.llm import get_model_cache, ModelCache
+# ── zen_eval imports (multi-turn judges, feedback, prompt versioning, gateway) ─
+import zen_eval
 
 # Enable Vulkan GPU backend for llama-cpp-python (AMD Radeon / any Vulkan GPU)
 # Must be set before llama_cpp is imported. Has no effect if Vulkan is absent.
@@ -59,29 +47,418 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
-# ─ LRU Model Cache (backed by zen_core_libs.llm.ModelCache) ─────────────────
+# ─ Local utility functions (formerly in zen_core_libs) ───────────────────────
+
+def count_tokens(text: str, model_path: str | None = None) -> int:
+    """Estimate token count. Uses tiktoken if available, else ~words/0.75."""
+    if not text:
+        return 0
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        return max(1, int(len(text.split()) / 0.75))
+
+
+def get_cpu_count() -> int:
+    """Get physical CPU core count."""
+    try:
+        return os.cpu_count() or 1
+    except Exception:
+        return 1
+
+
+def get_memory_gb() -> float:
+    """Get total RAM in GB."""
+    try:
+        import psutil as _ps
+        return _ps.virtual_memory().total / (1024**3)
+    except Exception:
+        return 8.0
+
+
+def get_cpu_info() -> dict:
+    """Detect CPU brand, full model name, and SIMD capabilities."""
+    import platform
+    info = {"brand": "Unknown", "name": "", "cores": get_cpu_count(), "avx2": False, "avx512": False}
+    try:
+        proc_name = platform.processor()
+        if proc_name:
+            info["name"] = proc_name
+            up = proc_name.upper()
+            if "AMD" in up: info["brand"] = "AMD"
+            elif "INTEL" in up: info["brand"] = "Intel"
+    except Exception:
+        pass
+    pid = os.environ.get("PROCESSOR_IDENTIFIER", "")
+    if pid and info["brand"] == "Unknown":
+        if "AMD" in pid.upper(): info["brand"] = "AMD"
+        elif "INTEL" in pid.upper(): info["brand"] = "Intel"
+    if pid and not info["name"]:
+        info["name"] = pid
+    try:
+        import cpuinfo as _ci
+        d = _ci.get_cpu_info()
+        info["name"] = d.get("brand_raw", info["name"])
+        flags = d.get("flags", [])
+        info["avx2"] = "avx2" in flags
+        info["avx512"] = any(f.startswith("avx512") for f in flags)
+    except Exception:
+        pass
+    return info
+
+
+def scan_gguf_models(dirs: list[str] | None = None) -> list[dict]:
+    """Scan directories for .gguf model files, including GGUF metadata."""
+    if not dirs:
+        dirs = [os.path.expanduser("~/AI/Models")]
+    models = []
+    all_paths = []
+    for d in dirs:
+        p = Path(d)
+        if not p.is_dir():
+            continue
+        for f in p.rglob("*.gguf"):
+            try:
+                size_mb = round(f.stat().st_size / (1024 * 1024))
+                meta = _extract_gguf_metadata(str(f))
+                entry = {
+                    "id": f.name, "path": str(f), "size_mb": size_mb, "name": f.stem,
+                    "architecture": meta.get("architecture", ""),
+                    "context_length": meta.get("context_length", 0),
+                    "quantization": meta.get("quantization", ""),
+                    "parameters": meta.get("parameters", ""),
+                    "embedding_length": meta.get("embedding_length", 0),
+                }
+                models.append(entry)
+                all_paths.append(str(f))
+            except Exception:
+                pass
+    # Kick off background thread to fill GGUF header cache for next request
+    if all_paths:
+        threading.Thread(target=_background_fill_gguf_cache, args=(all_paths,), daemon=True).start()
+    return models
+
+
+_GGUF_META_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".gguf_meta_cache.json")
+_gguf_meta_cache: dict[str, dict] = {}
+
+
+def _load_gguf_meta_cache() -> None:
+    """Load cached GGUF metadata from disk."""
+    global _gguf_meta_cache
+    try:
+        with open(_GGUF_META_CACHE_PATH, "r") as f:
+            _gguf_meta_cache = json.load(f)
+    except Exception:
+        _gguf_meta_cache = {}
+
+
+def _save_gguf_meta_cache() -> None:
+    """Persist GGUF metadata cache to disk."""
+    try:
+        with open(_GGUF_META_CACHE_PATH, "w") as f:
+            json.dump(_gguf_meta_cache, f)
+    except Exception:
+        pass
+
+
+_load_gguf_meta_cache()
+
+
+def _infer_metadata_from_filename(path: str) -> dict:
+    """Fast metadata inference from filename — no file I/O."""
+    meta: dict[str, Any] = {}
+    fname = os.path.basename(path).upper()
+    for qt in ("Q8_0", "Q6_K", "Q5_K_M", "Q5_K_S", "Q4_K_M", "Q4_K_S", "Q4_0",
+                "Q3_K_M", "Q3_K_S", "Q2_K", "IQ4_XS", "IQ3_M", "F16", "F32"):
+        if qt in fname:
+            meta["quantization"] = qt
+            break
+    for arch in ("LLAMA", "QWEN", "PHI", "GEMMA", "MISTRAL", "COMMAND", "STARCODER",
+                 "DEEPSEEK", "GLM", "DEVSTRAL", "GRANITE"):
+        if arch in fname:
+            meta["architecture"] = arch.lower()
+            break
+    # Try to extract parameter count from filename (e.g. "7B", "14B", "1.5B")
+    import re as _re
+    pm = _re.search(r"(\d+(?:\.\d+)?)[Bb]", os.path.basename(path))
+    if pm:
+        meta["parameters"] = pm.group(0).upper()
+    return meta
+
+
+def _extract_gguf_metadata(path: str) -> dict:
+    """Extract metadata from GGUF file header, with disk cache for speed."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return _infer_metadata_from_filename(path)
+    cache_key = f"{path}|{size}"
+    if cache_key in _gguf_meta_cache:
+        return _gguf_meta_cache[cache_key]
+    # Return fast filename-inferred metadata; queue background header read
+    return _infer_metadata_from_filename(path)
+
+
+def _background_fill_gguf_cache(paths: list[str]) -> None:
+    """Background thread: read GGUF headers and fill the cache."""
+    changed = False
+    for path in paths:
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            continue
+        cache_key = f"{path}|{size}"
+        if cache_key in _gguf_meta_cache:
+            continue
+        meta = _infer_metadata_from_filename(path)
+        try:
+            from gguf import GGUFReader
+            reader = GGUFReader(path, "r")
+            for field in reader.fields.values():
+                name = field.name if hasattr(field, "name") else ""
+                if not name:
+                    continue
+                if "context_length" in name:
+                    meta["context_length"] = int(field.parts[-1][0]) if field.parts else 0
+                elif "embedding_length" in name:
+                    meta["embedding_length"] = int(field.parts[-1][0]) if field.parts else 0
+                elif "general.architecture" in name:
+                    meta["architecture"] = str(bytes(field.parts[-1]), "utf-8").strip("\x00") if field.parts else ""
+                elif "general.quantization_version" in name or "general.file_type" in name:
+                    val = str(bytes(field.parts[-1]), "utf-8").strip("\x00") if field.parts else ""
+                    if val:
+                        meta["quantization"] = val
+                elif "general.name" in name:
+                    meta["model_name"] = str(bytes(field.parts[-1]), "utf-8").strip("\x00") if field.parts else ""
+        except Exception:
+            pass
+        _gguf_meta_cache[cache_key] = meta
+        changed = True
+    if changed:
+        _save_gguf_meta_cache()
+
+
+def estimate_model_memory_gb(size_mb: int, quant: str = "") -> float:
+    """Estimate runtime memory (GB) from file size + overhead."""
+    base_gb = size_mb / 1024
+    # KV cache + runtime overhead — roughly 20-40% over file size
+    overhead = 1.3 if "Q4" in quant.upper() or "Q3" in quant.upper() else 1.2
+    return round(base_gb * overhead, 1)
+
+
+def quantization_advisor(memory_gb: float, vram_gb: float = 0) -> dict:
+    """Recommend quantization level based on available RAM/VRAM."""
+    total = vram_gb if vram_gb > 0 else memory_gb
+    if total >= 32:
+        return {"recommended": "Q8_0", "max_params": "13B", "note": "High-quality Q8 or F16 for ≤7B"}
+    elif total >= 16:
+        return {"recommended": "Q6_K", "max_params": "7B", "note": "Q6_K best quality-per-bit. Q4_K_M for 13B."}
+    elif total >= 8:
+        return {"recommended": "Q4_K_M", "max_params": "7B", "note": "Q4_K_M balances quality and speed at 7B"}
+    elif total >= 4:
+        return {"recommended": "Q4_K_S", "max_params": "3B", "note": "Q4 small quants for ≤3B models"}
+    else:
+        return {"recommended": "Q3_K_S", "max_params": "1B", "note": "Only tiny quantized models fit"}
+
+
+class _SimpleModelCache:
+    """Thread-safe LRU model cache."""
+    def __init__(self, max_models: int = 8):
+        self._max = max_models
+        self._cache: dict[str, Any] = {}
+        self._order: list[str] = []
+        self._lock = threading.Lock()
+
+    def get_or_load(self, key: str, loader):
+        with self._lock:
+            if key in self._cache:
+                self._order.remove(key)
+                self._order.append(key)
+                return self._cache[key]
+        model = loader()
+        with self._lock:
+            self._cache[key] = model
+            self._order.append(key)
+            while len(self._order) > self._max:
+                evict_key = self._order.pop(0)
+                self._cache.pop(evict_key, None)
+        return model
+
+    def clear(self):
+        with self._lock:
+            self._cache.clear()
+            self._order.clear()
+
+
 _MODEL_CACHE_SIZE = int(os.environ.get("LLM_MODEL_CACHE_SIZE", "8"))
-_model_cache: ModelCache = get_model_cache(max_models=_MODEL_CACHE_SIZE)
+_model_cache = _SimpleModelCache(max_models=_MODEL_CACHE_SIZE)
+_llama_load_lock = threading.Lock()
+
+_PERF_PROFILES = {
+    "fastest": {
+        "min_threads_per_model": 3,
+        "max_threads_per_model": 16,
+        "ram_util": 0.90,
+        "ctx_cap": True,
+        "batch_boost": 1.20,
+    },
+    "balanced": {
+        "min_threads_per_model": 6,
+        "max_threads_per_model": 12,
+        "ram_util": 0.82,
+        "ctx_cap": True,
+        "batch_boost": 1.00,
+    },
+    "stable": {
+        "min_threads_per_model": 8,
+        "max_threads_per_model": 10,
+        "ram_util": 0.70,
+        "ctx_cap": True,
+        "batch_boost": 0.85,
+    },
+}
 
 
-def _get_or_load_model(path: str, n_ctx: int = 4096):
-    """Return a cached Llama model or load a new one. Thread-safe LRU cache."""
+def _normalize_perf_profile(name: str | None) -> str:
+    profile = str(name or "balanced").strip().lower()
+    return profile if profile in _PERF_PROFILES else "balanced"
+
+
+def _estimate_runtime_gb_for_path(path: str, n_ctx: int = 4096) -> float:
+    """Estimate model runtime memory footprint in GB for scheduling."""
+    try:
+        size_mb = round(os.path.getsize(path) / (1024 * 1024))
+    except OSError:
+        size_mb = 0
+    meta = _infer_metadata_from_filename(path)
+    quant = str(meta.get("quantization", ""))
+    base = estimate_model_memory_gb(size_mb, quant)
+    # KV/cache grows with context length; apply a conservative multiplier.
+    ctx_factor = 1.0 + max(0.0, (n_ctx - 4096) / 4096.0) * 0.18
+    return round(base * ctx_factor, 2)
+
+
+def _choose_n_batch(model_size_mb: int, perf_profile: str = "balanced") -> int:
+    """Adaptive n_batch by model size. Lower for large models to avoid stalls."""
+    profile = _PERF_PROFILES[_normalize_perf_profile(perf_profile)]
+    if model_size_mb >= 14000:
+        base = 64
+    elif model_size_mb >= 8000:
+        base = 96
+    elif model_size_mb >= 4000:
+        base = 128
+    elif model_size_mb >= 1000:
+        base = 192
+    else:
+        base = 256
+    boosted = int(base * float(profile["batch_boost"]))
+    return max(48, min(384, boosted))
+
+
+def _effective_n_ctx_for_path(path: str, requested_n_ctx: int, perf_profile: str = "balanced") -> int:
+    """Cap requested context to model-trained context length when available."""
+    profile = _PERF_PROFILES[_normalize_perf_profile(perf_profile)]
+    if not bool(profile.get("ctx_cap", True)):
+        return requested_n_ctx
+    meta = _extract_gguf_metadata(path)
+    model_ctx = int(meta.get("context_length", 0) or 0)
+    if model_ctx > 0:
+        return max(256, min(requested_n_ctx, model_ctx))
+    return requested_n_ctx
+
+
+def _compute_parallel_plan(
+    model_paths: list[str],
+    n_ctx: int = 4096,
+    perf_profile: str = "balanced",
+) -> tuple[int, int]:
+    """Return (max_workers, threads_per_model), tuned by CPU + available RAM."""
+    profile = _PERF_PROFILES[_normalize_perf_profile(perf_profile)]
+    total = max(1, len(model_paths))
+    cpu_count = max(2, (os.cpu_count() or 4))
+
+    # CPU-side cap: keep enough threads per model to avoid oversubscription.
+    min_thr = int(os.environ.get("LLM_MIN_THREADS_PER_MODEL", str(profile["min_threads_per_model"])))
+    cpu_worker_cap = max(1, cpu_count // max(2, min_thr))
+
+    # RAM-side cap: estimate how many models can run concurrently safely.
+    if HAS_PSUTIL:
+        try:
+            avail_ram_gb = max(1.0, psutil.virtual_memory().available / (1024 ** 3) * float(profile["ram_util"]))
+        except Exception:
+            avail_ram_gb = max(1.0, get_memory_gb() * float(profile["ram_util"]))
+    else:
+        avail_ram_gb = max(1.0, get_memory_gb() * float(profile["ram_util"]))
+    est_gb = [_estimate_runtime_gb_for_path(p, n_ctx) for p in model_paths] or [1.0]
+    avg_est = max(0.5, sum(est_gb) / len(est_gb))
+    ram_worker_cap = max(1, int(avail_ram_gb // (avg_est * 1.10)))
+
+    hard_cap = int(os.environ.get("LLM_MAX_WORKERS", str(total)))
+    max_workers = max(1, min(total, cpu_worker_cap, ram_worker_cap, hard_cap))
+
+    max_threads_cap = max(2, int(os.environ.get("LLM_MAX_THREADS_PER_MODEL", str(profile["max_threads_per_model"]))))
+    min_threads_cap = max(2, int(os.environ.get("LLM_MIN_THREADS_PER_MODEL", str(profile["min_threads_per_model"]))))
+    threads_per_model = max(min_threads_cap, min(max_threads_cap, cpu_count // max_workers))
+    return max_workers, threads_per_model
+
+
+def _get_or_load_model(
+    path: str,
+    n_ctx: int = 4096,
+    draft_model: str = "",
+    n_threads_override: int | None = None,
+    n_batch_override: int | None = None,
+):
+    """Return a cached Llama model or load a new one. Thread-safe LRU cache.
+    
+    If *draft_model* is set, enables speculative decoding (E5).
+    """
     import llama_cpp
 
-    cache_key = f"{path}::ctx{n_ctx}"
+    thread_key = n_threads_override if n_threads_override is not None else "auto"
+    batch_key = n_batch_override if n_batch_override is not None else "auto"
+    cache_key = (
+        f"{path}::ctx{n_ctx}::thr={thread_key}::batch={batch_key}"
+        + (f"::draft={draft_model}" if draft_model else "")
+    )
 
     def _loader():
-        return llama_cpp.Llama(
+        n_threads = n_threads_override or int(
+            os.environ.get("LLM_THREADS", str(max(2, (os.cpu_count() or 4) // 2)))
+        )
+        try:
+            model_size_mb = round(os.path.getsize(path) / (1024 * 1024))
+        except OSError:
+            model_size_mb = 0
+        n_batch = n_batch_override or int(os.environ.get("LLM_N_BATCH", str(_choose_n_batch(model_size_mb))))
+        n_gpu_layers = int(os.environ.get("LLM_N_GPU_LAYERS", "0"))
+        kwargs: dict = dict(
             model_path=path,
             n_ctx=n_ctx,
-            n_threads=max(1, (os.cpu_count() or 4) // 2),
-            n_gpu_layers=-1,
-            flash_attn=True,
-            n_batch=512,
+            n_threads=max(1, n_threads),
+            n_gpu_layers=n_gpu_layers,
+            flash_attn=n_gpu_layers != 0,
+            n_batch=n_batch,
             use_mmap=True,
             use_mlock=False,
             verbose=False,
         )
+        # Speculative decoding — llama_cpp ≥0.2.56 supports draft_model
+        if draft_model and os.path.isfile(draft_model):
+            try:
+                kwargs["draft_model"] = llama_cpp.LlamaDraftModel(
+                    model_path=draft_model, num_pred_tokens=8,
+                )
+                print(f"[spec] Using draft model: {os.path.basename(draft_model)}")
+            except Exception as e:
+                print(f"[spec] Draft model failed, falling back: {e}")
+        # llama.cpp context construction can be unstable when many models
+        # are initialized concurrently in one process on some platforms.
+        with _llama_load_lock:
+            return llama_cpp.Llama(**kwargs)
 
     return _model_cache.get_or_load(cache_key, _loader)
 
@@ -120,71 +497,114 @@ except ImportError:
     proc = None
 
 
-# ── Compatibility wrappers for zen_core_libs ─────────────────────────────────
-# zen_core_libs returns GPUInfo dataclass objects; the frontend + tests expect dicts.
-
-_BACKEND_MAP = {"cuda": "CUDA", "rocm": "ROCm/Vulkan", "wmi": "DirectML"}
+# ── Hardware detection & build recommendations ──────────────────────────────
 
 
 def get_gpu_info() -> list[dict]:
-    """Detect GPUs via zen_core_libs, return as list of dicts for backward compat."""
-    raw = _zcl_get_gpu_info()
-    return [
-        {
-            "name": g.name,
-            "vendor": g.vendor,
-            "vram_gb": round(g.vram_gb, 1),
-            "backend": _BACKEND_MAP.get(g.backend, g.backend),
-        }
-        for g in raw
-    ]
+    """Detect GPUs. Returns list of dicts with name/vendor/vram_gb/backend."""
+    gpus: list[dict] = []
+    # Try NVIDIA via nvidia-smi
+    try:
+        import subprocess
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+            timeout=5, stderr=subprocess.DEVNULL, text=True,
+        )
+        for line in out.strip().splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) >= 2:
+                gpus.append({
+                    "name": parts[0],
+                    "vendor": "NVIDIA",
+                    "vram_gb": round(float(parts[1]) / 1024, 1),
+                    "backend": "CUDA",
+                })
+    except Exception:
+        pass
+    # Try WMI on Windows (catches AMD / Intel iGPU)
+    if not gpus and sys.platform == "win32":
+        try:
+            import subprocess
+            out = subprocess.check_output(
+                ["wmic", "path", "win32_videocontroller", "get", "Name,AdapterRAM", "/format:csv"],
+                timeout=5, stderr=subprocess.DEVNULL, text=True,
+            )
+            for line in out.strip().splitlines()[1:]:
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 3:
+                    vram = int(parts[1]) / (1024**3) if parts[1].isdigit() else 0
+                    name = parts[2]
+                    vendor = "AMD" if "AMD" in name.upper() or "RADEON" in name.upper() else \
+                             "NVIDIA" if "NVIDIA" in name.upper() else \
+                             "Intel" if "INTEL" in name.upper() else "Unknown"
+                    backend = "CUDA" if vendor == "NVIDIA" else "ROCm/Vulkan" if vendor == "AMD" else "DirectML"
+                    gpus.append({"name": name, "vendor": vendor, "vram_gb": round(vram, 1), "backend": backend})
+        except Exception:
+            pass
+    return gpus
 
 
 def recommend_llama_build(cpu: dict | None = None, gpus: list | None = None) -> dict:
-    """Recommend best llama.cpp build. Accepts dicts or GPUInfo objects."""
-    # Convert dict gpus to GPUInfo for zen_core_libs
-    _REVERSE_BACKEND = {"CUDA": "cuda", "ROCm/Vulkan": "rocm", "DirectML": "wmi"}
-    gpu_objs: list[GPUInfo] | None = None
-    if gpus is not None:
-        gpu_objs = []
-        for g in gpus:
-            if isinstance(g, GPUInfo):
-                gpu_objs.append(g)
-            elif isinstance(g, dict):
-                be = g.get("backend", "")
-                gpu_objs.append(GPUInfo(
-                    name=g.get("name", "Unknown"),
-                    vendor=g.get("vendor", "Unknown"),
-                    vram_gb=g.get("vram_gb", 0.0),
-                    backend=_REVERSE_BACKEND.get(be, be.lower()),
-                ))
-    rec = _zcl_recommend_llama_build(cpu, gpu_objs)
-    # Map flag: zen_core_libs uses pip args; tests expect short tag
-    build = rec.get("build", "").lower()
-    if "cuda" in build:
-        rec["flag"] = "cuda"
-    elif "rocm" in build or "vulkan" in build:
-        rec["flag"] = "rocm"
-    elif "avx-512" in build or "avx512" in build:
-        rec["flag"] = "avx512"
-    elif "avx2" in build:
-        rec["flag"] = "avx2"
-    else:
-        rec["flag"] = "cpu"
-    # Add "pip" key alias for backward compat (old tests check rec["pip"])
-    if "pip_command" in rec:
-        rec["pip"] = rec["pip_command"]
+    """Recommend best llama.cpp build based on detected hardware."""
+    rec: dict[str, Any] = {"build": "CPU (OpenBLAS)", "flag": "cpu", "pip": "llama-cpp-python"}
+    if gpus:
+        for g in gpus if isinstance(gpus, list) else []:
+            gd = g if isinstance(g, dict) else {}
+            backend = gd.get("backend", "")
+            vendor = gd.get("vendor", "").upper()
+            if "CUDA" in backend or "NVIDIA" in vendor:
+                rec = {
+                    "build": "CUDA (GPU)",
+                    "flag": "cuda",
+                    "pip": "llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124",
+                }
+                break
+            if "ROCm" in backend or "Vulkan" in backend or "AMD" in vendor:
+                rec = {
+                    "build": "Vulkan (GPU)",
+                    "flag": "rocm",
+                    "pip": "llama-cpp-python (build with CMAKE_ARGS=-DGGML_VULKAN=on)",
+                }
+                break
+    elif cpu:
+        if cpu.get("avx512"):
+            rec = {"build": "CPU (AVX-512)", "flag": "avx512", "pip": "llama-cpp-python"}
+        elif cpu.get("avx2"):
+            rec = {"build": "CPU (AVX2)", "flag": "avx2", "pip": "llama-cpp-python"}
     return rec
 
 
 def get_system_info(model_dirs: list[str] | None = None) -> dict:
-    """Return comprehensive system info, augmented with llama.cpp status."""
-    info = _zcl_get_system_info(model_dirs)
-    info["timestamp"] = time.time()
+    """Return comprehensive system info dict for the frontend."""
+    cpu = get_cpu_info()
+    gpus = get_gpu_info()
+    models = scan_gguf_models(model_dirs)
     llama = get_llama_cpp_info()
-    info["has_llama_cpp"] = llama["installed"]
-    info["llama_cpp_version"] = llama["version"]
-    return info
+    build_rec = recommend_llama_build(cpu, gpus)
+    mem_gb = round(get_memory_gb(), 1)
+    vram_gb = sum(g.get("vram_gb", 0) for g in gpus)
+    quant_advice = quantization_advisor(mem_gb, vram_gb)
+    # Add per-model fitness info
+    for m in models:
+        est_mem = estimate_model_memory_gb(m.get("size_mb", 0), m.get("quantization", ""))
+        m["estimated_memory_gb"] = est_mem
+        m["fits_ram"] = est_mem <= mem_gb
+        m["fits_vram"] = est_mem <= vram_gb if vram_gb > 0 else False
+    return {
+        "cpu_count": cpu.get("cores", get_cpu_count()),
+        "cpu_name": cpu.get("name", ""),
+        "cpu_brand": cpu.get("brand", "Unknown"),
+        "memory_gb": mem_gb,
+        "gpus": gpus,
+        "vram_gb": round(vram_gb, 1),
+        "models": models,
+        "model_count": len(models),
+        "recommended_build": build_rec,
+        "quant_advice": quant_advice,
+        "has_llama_cpp": llama["installed"],
+        "llama_cpp_version": llama["version"],
+        "timestamp": time.time(),
+    }
 
 
 
@@ -205,6 +625,146 @@ def get_llama_cpp_info() -> dict:
 
 # ─ Alias for backward compat — tests call cb.scan_models() ──────────────────
 scan_models = scan_gguf_models
+
+
+# ─ SQLite persistent results & ELO database ──────────────────────────────────
+_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zen_results.db")
+_db_lock = threading.Lock()
+
+
+def _db_init():
+    """Create results + ELO tables if they don't exist."""
+    with _db_lock:
+        con = sqlite3.connect(_DB_PATH)
+        con.executescript("""
+            CREATE TABLE IF NOT EXISTS results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prompt TEXT NOT NULL,
+                judge_model TEXT,
+                timestamp REAL NOT NULL,
+                payload TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS elo (
+                model TEXT PRIMARY KEY,
+                rating REAL NOT NULL DEFAULT 1500,
+                wins INTEGER NOT NULL DEFAULT 0,
+                losses INTEGER NOT NULL DEFAULT 0,
+                draws INTEGER NOT NULL DEFAULT 0,
+                matches INTEGER NOT NULL DEFAULT 0,
+                last_updated REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_results_ts ON results(timestamp);
+        """)
+        con.close()
+
+
+def db_save_result(prompt: str, judge_model: str | None, responses: list[dict], ts: float) -> int:
+    """Persist a comparison result. Returns row id."""
+    payload = json.dumps({"responses": responses}, default=str)
+    with _db_lock:
+        con = sqlite3.connect(_DB_PATH)
+        cur = con.execute(
+            "INSERT INTO results (prompt, judge_model, timestamp, payload) VALUES (?,?,?,?)",
+            (prompt, judge_model or "", ts, payload),
+        )
+        rid = cur.lastrowid
+        con.commit()
+        con.close()
+    return rid or 0
+
+
+def db_get_results(limit: int = 50, offset: int = 0) -> list[dict]:
+    """Retrieve recent results."""
+    with _db_lock:
+        con = sqlite3.connect(_DB_PATH)
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT * FROM results ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        con.close()
+    out = []
+    for r in rows:
+        entry = dict(r)
+        try:
+            entry["payload"] = json.loads(entry["payload"])
+        except Exception:
+            pass
+        out.append(entry)
+    return out
+
+
+def db_get_elo() -> list[dict]:
+    """Return all ELO rankings sorted by rating descending."""
+    with _db_lock:
+        con = sqlite3.connect(_DB_PATH)
+        con.row_factory = sqlite3.Row
+        rows = con.execute("SELECT * FROM elo ORDER BY rating DESC").fetchall()
+        con.close()
+    return [dict(r) for r in rows]
+
+
+def db_update_elo(responses: list[dict]):
+    """Update ELO ratings from comparison results. Best score wins."""
+    scored = [r for r in responses if not r.get("error") and r.get("judge_score", 0) > 0]
+    if len(scored) < 2:
+        return
+    scored.sort(key=lambda r: r.get("judge_score", 0), reverse=True)
+    K = 32
+    now = time.time()
+    with _db_lock:
+        con = sqlite3.connect(_DB_PATH)
+        # Ensure all models exist
+        for r in scored:
+            con.execute(
+                "INSERT OR IGNORE INTO elo (model, rating, wins, losses, draws, matches, last_updated) VALUES (?,1500,0,0,0,0,?)",
+                (r["model"], now),
+            )
+        # Pairwise ELO update: each model vs every other
+        ratings = {}
+        for r in scored:
+            row = con.execute("SELECT rating FROM elo WHERE model=?", (r["model"],)).fetchone()
+            ratings[r["model"]] = row[0] if row else 1500.0
+
+        for i, a in enumerate(scored):
+            for b in scored[i + 1:]:
+                ra, rb = ratings[a["model"]], ratings[b["model"]]
+                ea = 1 / (1 + 10 ** ((rb - ra) / 400))
+                eb = 1 - ea
+                sa_score = a.get("judge_score", 0)
+                sb_score = b.get("judge_score", 0)
+                if sa_score > sb_score:
+                    sa, sb = 1.0, 0.0
+                    con.execute("UPDATE elo SET wins=wins+1, matches=matches+1, last_updated=? WHERE model=?", (now, a["model"]))
+                    con.execute("UPDATE elo SET losses=losses+1, matches=matches+1, last_updated=? WHERE model=?", (now, b["model"]))
+                elif sb_score > sa_score:
+                    sa, sb = 0.0, 1.0
+                    con.execute("UPDATE elo SET losses=losses+1, matches=matches+1, last_updated=? WHERE model=?", (now, a["model"]))
+                    con.execute("UPDATE elo SET wins=wins+1, matches=matches+1, last_updated=? WHERE model=?", (now, b["model"]))
+                else:
+                    sa, sb = 0.5, 0.5
+                    con.execute("UPDATE elo SET draws=draws+1, matches=matches+1, last_updated=? WHERE model=?", (now, a["model"]))
+                    con.execute("UPDATE elo SET draws=draws+1, matches=matches+1, last_updated=? WHERE model=?", (now, b["model"]))
+                ratings[a["model"]] = ra + K * (sa - ea)
+                ratings[b["model"]] = rb + K * (sb - eb)
+
+        for model, rating in ratings.items():
+            con.execute("UPDATE elo SET rating=? WHERE model=?", (round(rating, 1), model))
+        con.commit()
+        con.close()
+
+
+def db_clear_elo():
+    """Reset all ELO ratings."""
+    with _db_lock:
+        con = sqlite3.connect(_DB_PATH)
+        con.execute("DELETE FROM elo")
+        con.commit()
+        con.close()
+
+
+# Initialize DB on import
+_db_init()
 
 
 # ─ Judge score extraction (robust, multi-fallback) ────────────────────────────
@@ -282,11 +842,15 @@ def _extract_scores_regex(text: str) -> dict:
     result: dict = {}
     lower = text.lower()
 
-    # Match patterns: "overall score: 8", "overall: 8/10", "overall 8 out of 10"
+    # Match patterns: "overall score: 8", "overall: 8/10", "overall 8 out of 10", "overall is: 8", "overall = 7"
     patterns = [
-        (r"overall[\s:]+(\d+(?:\.\d+)?)\s*(?:/\s*10|out\s+of\s+10)?", "overall"),
-        (r"accuracy[\s:]+(\d+(?:\.\d+)?)\s*(?:/\s*10)?", "accuracy"),
-        (r"reasoning[\s:]+(\d+(?:\.\d+)?)\s*(?:/\s*10)?", "reasoning"),
+        (r"overall[\s:=]+(?:is[\s:]+)?(\d+(?:\.\d+)?)\s*(?:/\s*10|out\s+of\s+10)?", "overall"),
+        (r"accuracy[\s:=]+(?:is[\s:]+)?(\d+(?:\.\d+)?)\s*(?:/\s*10|out\s+of\s+10)?", "accuracy"),
+        (r"reasoning[\s:=]+(?:is[\s:]+)?(\d+(?:\.\d+)?)\s*(?:/\s*10|out\s+of\s+10)?", "reasoning"),
+        (r"instruction.?following[\s:=]+(?:is[\s:]+)?(true|false|\d+(?:\.\d+)?)", "instruction_following"),
+        (r"safety[\s:=]+(?:is[\s:]+)?[\"']?(safe|unsafe|refused)[\"']?", "safety"),
+        (r"conciseness[\s:=]+(?:is[\s:]+)?(\d+(?:\.\d+)?)\s*(?:/\s*10)?", "conciseness"),
+        (r"multilingual[\s:=]+(?:is[\s:]+)?(\d+(?:\.\d+)?)\s*(?:/\s*10)?", "multilingual"),
     ]
     for pattern, key in patterns:
         m = re.search(pattern, lower)
@@ -409,6 +973,13 @@ def get_system_info_cached(model_dirs: list[str]) -> dict:
             if age < _SYSINFO_TTL:
                 # Refresh model list inline (fast) while keeping cached hw data
                 fresh_models = scan_gguf_models(model_dirs)
+                mem_gb = _sysinfo_cache.get("memory_gb", 8)
+                vram_gb = _sysinfo_cache.get("vram_gb", 0)
+                for m in fresh_models:
+                    est = estimate_model_memory_gb(m.get("size_mb", 0), m.get("quantization", ""))
+                    m["estimated_memory_gb"] = est
+                    m["fits_ram"] = est <= mem_gb
+                    m["fits_vram"] = est <= vram_gb if vram_gb > 0 else False
                 result = dict(_sysinfo_cache)
                 result["models"] = fresh_models
                 result["model_count"] = len(fresh_models)
@@ -597,6 +1168,19 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             self._handle_download_status()
         elif self.path.startswith("/__install-status"):
             self._handle_install_status()
+        # ── zen_eval GET endpoints ────────────────────────────────────────
+        elif self.path.startswith("/__prompts"):
+            self._handle_prompts_get()
+        elif self.path.startswith("/__feedback"):
+            self._handle_feedback_get()
+        elif self.path.startswith("/__gateway/stats"):
+            self._handle_gateway_stats()
+        elif self.path.startswith("/__gateway/routes"):
+            self._handle_gateway_routes_get()
+        elif self.path.startswith("/__results"):
+            self._handle_results_get()
+        elif self.path.startswith("/__elo"):
+            self._handle_elo_get()
         elif self.path in ("/", "/model_comparator.html", "/index.html"):
             # Serve the main HTML app directly from the backend
             html_path = os.path.join(
@@ -685,6 +1269,28 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             self._handle_install_llama(data)
         elif self.path == "/__chat":
             self._handle_chat(data)
+        # ── zen_eval POST endpoints ───────────────────────────────────────
+        elif self.path == "/__prompts":
+            self._handle_prompts_post(data)
+        elif self.path == "/__prompts/alias":
+            self._handle_prompt_alias(data)
+        elif self.path == "/__feedback":
+            self._handle_feedback_post(data)
+        elif self.path == "/__feedback/human":
+            self._handle_feedback_human(data)
+        elif self.path == "/__judge/conversation":
+            self._handle_judge_conversation(data)
+        elif self.path == "/__judge/toolcall":
+            self._handle_judge_toolcall(data)
+        elif self.path == "/__gateway/routes":
+            self._handle_gateway_routes_post(data)
+        elif self.path == "/__gateway/resolve":
+            self._handle_gateway_resolve(data)
+        elif self.path == "/__results/save":
+            self._handle_results_save(data)
+        elif self.path == "/__elo/reset":
+            db_clear_elo()
+            self._send_json(200, {"ok": True})
         else:
             self._send_json(404, {"error": "Not found"})
 
@@ -696,10 +1302,30 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json(500, {"error": str(e)})
 
+    def _handle_results_get(self) -> None:
+        """GET /__results?limit=50&offset=0"""
+        qs = parse_qs(urlparse(self.path).query)
+        limit = min(int(qs.get("limit", ["50"])[0]), 500)
+        offset = int(qs.get("offset", ["0"])[0])
+        self._send_json(200, db_get_results(limit, offset))
+
+    def _handle_results_save(self, data: dict) -> None:
+        """POST /__results/save — persist a comparison result."""
+        prompt = data.get("prompt", "")
+        judge = data.get("judge_model", "")
+        responses = data.get("responses", [])
+        ts = data.get("timestamp", time.time())
+        rid = db_save_result(prompt, judge, responses, ts)
+        # Also update ELO
+        db_update_elo(responses)
+        self._send_json(201, {"ok": True, "id": rid})
+
+    def _handle_elo_get(self) -> None:
+        """GET /__elo — return persistent ELO rankings."""
+        self._send_json(200, db_get_elo())
+
     def _handle_install_status(self) -> None:
         """GET /__install-status?job=<id>"""
-        from urllib.parse import parse_qs, urlparse
-
         qs = parse_qs(urlparse(self.path).query)
         job_id = qs.get("job", [""])[0]
         with _install_lock:
@@ -732,8 +1358,6 @@ class ComparatorHandler(BaseHTTPRequestHandler):
 
     def _handle_download_status(self) -> None:
         """GET /__download-status?job=<id>"""
-        from urllib.parse import parse_qs, urlparse
-
         qs = parse_qs(urlparse(self.path).query)
         job_id = qs.get("job", [""])[0]
         with _download_lock:
@@ -804,6 +1428,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 "top_p": float(data.get("top_p", 0.95)),
                 "repeat_penalty": float(data.get("repeat_penalty", 1.1)),
                 "inference_timeout": req_timeout,
+                "performance_profile": _normalize_perf_profile(data.get("performance_profile", "balanced")),
             }
             responses = self._run_local_comparisons(prompt, system_prompt, safe_models, params)
 
@@ -864,6 +1489,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 "top_p": float(data.get("top_p", 0.95)),
                 "repeat_penalty": float(data.get("repeat_penalty", 1.1)),
                 "inference_timeout": req_timeout,
+                "performance_profile": _normalize_perf_profile(data.get("performance_profile", "balanced")),
             }
 
             # Send SSE headers
@@ -902,35 +1528,19 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             top_p = params["top_p"]
             repeat_penalty = params["repeat_penalty"]
             inference_timeout = params["inference_timeout"]
-
-            # ── Phase 1: Pre-load all models into cache (sequential) ──────
+            perf_profile = params.get("performance_profile", "balanced")
             total_models = len(safe_models)
+            max_workers, threads_per_model = _compute_parallel_plan(safe_models, n_ctx, perf_profile)
 
-            print(f"\n[compare] Pre-loading {total_models} model(s)…", flush=True)
-            for idx, path in enumerate(safe_models):
-                model_name = os.path.basename(path).replace(".gguf", "")
-                file_size_mb = round(os.path.getsize(path) / (1024 * 1024))
-                _sse("model_loading", {
-                    "model": model_name, "model_index": idx,
-                    "total_models": total_models,
-                    "size_mb": file_size_mb, "phase": "loading",
-                })
-                print(f"  Loading {model_name} ({file_size_mb} MB)…", flush=True)
-                t_load = time.time()
-                _get_or_load_model(path, n_ctx)
-                load_ms = round((time.time() - t_load) * 1000)
-                _sse("model_loaded", {
-                    "model": model_name, "model_index": idx,
-                    "total_models": total_models,
-                    "load_time_ms": load_ms, "phase": "ready",
-                })
-                print(f"  {model_name} loaded in {load_ms/1000:.1f}s", flush=True)
-
-            # ── Phase 2: Dispatch inference with stream=False in parallel ─
+            # Dispatch inference (load+infer inside worker thread) in parallel
             # stream=False lets llama.cpp run the entire C++ compute while
             # the GIL is released, enabling TRUE parallel execution across
             # threads — exactly like the original Swarm run_arena pattern.
-            print(f"[compare] Dispatching prompt to {total_models} model(s) in parallel…", flush=True)
+            print(
+                f"[compare] Dispatching prompt to {total_models} model(s) in parallel "
+                f"(profile={perf_profile}, workers={max_workers}, threads/model={threads_per_model})...",
+                flush=True,
+            )
             _dispatch_t0 = time.time()
 
             # Tell the frontend all models are now generating
@@ -945,7 +1555,14 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 """Run inference on a pre-loaded model with stream=False."""
                 model_name = os.path.basename(path).replace(".gguf", "")
                 model_size_mb = round(os.path.getsize(path) / (1024 * 1024)) if os.path.exists(path) else 0
-                llm = _get_or_load_model(path, n_ctx)
+                model_n_ctx = _effective_n_ctx_for_path(path, n_ctx, perf_profile)
+                n_batch = _choose_n_batch(model_size_mb, perf_profile)
+                llm = _get_or_load_model(
+                    path,
+                    model_n_ctx,
+                    n_threads_override=threads_per_model,
+                    n_batch_override=n_batch,
+                )
 
                 t0 = time.time()
                 ram_before = 0
@@ -1001,13 +1618,13 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                         "efficiency": efficiency,
                         "response_chars": len(response_text),
                     }
-                    print(f"  [model-{model_idx}] {model_name} done — {completion_tokens} tok, {tps:.1f} t/s, eff={efficiency:.1f} t/s/GB, {elapsed_ms/1000:.1f}s", flush=True)
+                    print(f"  [model-{model_idx}] {model_name} done - {completion_tokens} tok, {tps:.1f} t/s, eff={efficiency:.1f} t/s/GB, {elapsed_ms/1000:.1f}s", flush=True)
                     return result
                 except Exception as exc:
                     elapsed_ms = (time.time() - t0) * 1000
                     result = {
                         "model": model_name, "model_path": path, "path": path,
-                        "response": f"❌ Error: {exc}",
+                        "response": f"ERROR: {exc}",
                         "error": str(exc),
                         "time_ms": round(elapsed_ms, 1),
                         "tokens": 0, "tokens_per_sec": 0,
@@ -1020,7 +1637,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
 
             # Launch all models via ThreadPoolExecutor
             with concurrent.futures.ThreadPoolExecutor(
-                max_workers=min(total_models, 6)
+                max_workers=max_workers
             ) as pool:
                 futures = {
                     pool.submit(_thread_infer, idx, path): idx
@@ -1145,6 +1762,8 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         top_p = params.get("top_p", 0.95)
         repeat_penalty = params.get("repeat_penalty", 1.1)
         inference_timeout = params.get("inference_timeout", DEFAULT_INFERENCE_TIMEOUT)
+        perf_profile = params.get("performance_profile", "balanced")
+        max_workers, threads_per_model = _compute_parallel_plan(model_paths, n_ctx, perf_profile)
 
         try:
             import llama_cpp
@@ -1154,7 +1773,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                     "model": os.path.basename(p).replace(".gguf", ""),
                     "model_path": p,
                     "path": p,
-                    "response": "⚠️ llama-cpp-python not installed. Click Install in the sidebar.",
+                    "response": "WARNING: llama-cpp-python not installed. Click Install in the sidebar.",
                     "error": "llama_cpp not installed",
                     "time_ms": 0,
                     "tokens": 0,
@@ -1169,17 +1788,24 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         def _run_one(path: str) -> dict:
             model_name = os.path.basename(path).replace(".gguf", "")
             model_size_mb = round(os.path.getsize(path) / (1024 * 1024)) if os.path.exists(path) else 0
+            model_n_ctx = _effective_n_ctx_for_path(path, n_ctx, perf_profile)
             print(
-                f"[compare] ▶ {model_name}  ctx={n_ctx}  max_tokens={max_tokens}  temp={temperature}"
+                f"[compare] START {model_name}  ctx={model_n_ctx}  max_tokens={max_tokens}  temp={temperature}"
             )
             t0 = time.time()
+            n_batch = _choose_n_batch(model_size_mb, perf_profile)
             ram_before = (
                 (proc.memory_info().rss // (1024 * 1024))
                 if (HAS_PSUTIL and proc is not None)
                 else 0  # type: ignore[union-attr]
             )
             try:
-                llm = _get_or_load_model(path, n_ctx)
+                llm = _get_or_load_model(
+                    path,
+                    model_n_ctx,
+                    n_threads_override=threads_per_model,
+                    n_batch_override=n_batch,
+                )
                 # stream=False → entire C++ compute runs with GIL released
                 out = llm.create_chat_completion(
                     messages=_build_messages(system_prompt, prompt, path),
@@ -1209,7 +1835,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 efficiency = round(tps / model_size_gb, 2) if model_size_gb > 0 else 0
 
                 print(
-                    f"[compare] ✅ {model_name}  {elapsed_ms:.0f}ms  {completion_tokens}tok  {tps:.1f}t/s  eff={efficiency:.1f}t/s/GB  ram+{ram_delta}MB"
+                    f"[compare] OK {model_name}  {elapsed_ms:.0f}ms  {completion_tokens}tok  {tps:.1f}t/s  eff={efficiency:.1f}t/s/GB  ram+{ram_delta}MB"
                 )
                 return {
                     "model": model_name,
@@ -1234,7 +1860,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                     "model": model_name,
                     "model_path": path,
                     "path": path,
-                    "response": f"❌ Error loading/running model: {exc}",
+                    "response": f"ERROR loading/running model: {exc}",
                     "error": str(exc),
                     "time_ms": round(elapsed_ms, 1),
                     "tokens": 0,
@@ -1247,15 +1873,14 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                     "response_chars": 0,
                 }
 
-        # Pre-load all models into cache first
-        print(f"[compare] Pre-loading {len(model_paths)} model(s)…", flush=True)
-        for path in model_paths:
-            _get_or_load_model(path, n_ctx)
-
         # Run all models in parallel via ThreadPoolExecutor
-        print(f"[compare] Dispatching to {len(model_paths)} model(s) in parallel…", flush=True)
+        print(
+            f"[compare] Dispatching {len(model_paths)} model(s) in parallel "
+            f"(profile={perf_profile}, workers={max_workers}, threads/model={threads_per_model})...",
+            flush=True,
+        )
         with concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(len(model_paths), 6)
+            max_workers=max_workers
         ) as pool:
             futures = {pool.submit(_run_one, p): p for p in model_paths}
             results = []
@@ -1323,39 +1948,46 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         self,
         responses: list[dict],
         original_prompt: str,
-        judge_path: str,
+        judge_path: str | list[str],
         judge_system_prompt: str,
         params: dict,
+        reference_answer: str = "",
     ) -> list[dict]:
-        """Score each response using the judge model; adds judge_score + judge_detail.
+        """Score each response using one or more judge models.
 
-        Single-pass evaluation for speed on CPU-constrained systems.
+        Supports:
+          - E1: Structured JSON output via response_format
+          - E3: Multi-judge consensus (pass list of paths)
+          - E4: Reference-guided judging (optional reference_answer)
         """
         try:
             import llama_cpp
         except ImportError:
             return responses
 
-        import gc
+        # Normalise judge_path to list for multi-judge support (E3)
+        judge_paths = judge_path if isinstance(judge_path, list) else [judge_path]
 
-        judge_name = os.path.basename(judge_path).replace(".gguf", "")
-        print(f"[judge] Loading {judge_name}…")
-        llm = None
-        try:
-            llm = _get_or_load_model(judge_path, min(params.get("n_ctx", 4096), 8192))
+        for idx, r in enumerate(responses):
+            if r.get("error"):
+                continue
 
-            for idx, r in enumerate(responses):
-                if r.get("error"):
+            all_judge_scores: list[float] = []
+            all_judge_details: list[dict] = []
+
+            for jp in judge_paths:
+                judge_name = os.path.basename(jp).replace(".gguf", "")
+                try:
+                    llm = _get_or_load_model(jp, min(params.get("n_ctx", 4096), 8192))
+                except Exception as load_err:
+                    print(f"[judge] WARN cannot load {judge_name}: {load_err}")
                     continue
 
-                scores_collected: list[float] = []
-                details_collected: list[dict] = []
-
-                # Single-pass evaluation
-                user_msg = (
-                    f"Original question: {original_prompt}\n\n"
-                    f"Model response:\n{r.get('response', '')}"
-                )
+                # Build user message — inject reference answer when provided (E4)
+                user_msg = f"Original question: {original_prompt}\n\n"
+                if reference_answer:
+                    user_msg += f"Reference answer:\n{reference_answer}\n\n"
+                user_msg += f"Model response:\n{r.get('response', '')}"
 
                 for attempt in range(2):  # retry once on failure
                     try:
@@ -1367,41 +1999,59 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                                 'object: {"overall": <number>}'
                             )
                         )
-                        out = llm.create_chat_completion(
-                            messages=_build_messages(sys_prompt, user_msg, judge_path),
+                        # E1: request structured JSON output
+                        create_kwargs: dict = dict(
+                            messages=_build_messages(sys_prompt, user_msg, jp),
                             max_tokens=512,
                             temperature=0.1,
                             stream=False,
                         )
+                        try:
+                            create_kwargs["response_format"] = {"type": "json_object"}
+                            out = llm.create_chat_completion(**create_kwargs)
+                        except Exception:
+                            # Fallback for models that don't support response_format
+                            create_kwargs.pop("response_format", None)
+                            out = llm.create_chat_completion(**create_kwargs)
+
                         raw = out["choices"][0]["message"]["content"].strip()  # type: ignore[index]
                         jd = extract_judge_scores(raw)
                         score = float(jd.get("overall", 0))
-                        scores_collected.append(score)
-                        details_collected.append(jd)
+                        jd["judge_model"] = judge_name
+                        all_judge_scores.append(score)
+                        all_judge_details.append(jd)
                         break
                     except Exception as je:
                         print(
                             f"[judge] WARN attempt {attempt+1} "
-                            f"failed for {r['model']}: {je}"
+                            f"failed for {r['model']} ({judge_name}): {je}"
                         )
 
-                if scores_collected:
-                    score = scores_collected[0]
-                    detail = details_collected[0].copy()
-                    detail["overall"] = round(score, 1)
-                    r["judge_score"] = round(score, 1)
-                    r["quality_score"] = round(score, 1)
-                    r["judge_detail"] = detail
-                    print(f"[judge] OK {r['model']}  score={score:.1f}")
-                else:
-                    r["judge_score"] = 0
-                    r["quality_score"] = 0
-                    r["judge_detail"] = {
-                        "overall": 0,
-                        "error": "Judge failed after retries",
+            if all_judge_scores:
+                # Consensus: average across judges (E3)
+                avg_score = round(sum(all_judge_scores) / len(all_judge_scores), 1)
+                # Merge detail from first judge, add consensus info
+                detail = all_judge_details[0].copy()
+                detail["overall"] = avg_score
+                if len(all_judge_details) > 1:
+                    detail["consensus"] = {
+                        "num_judges": len(all_judge_details),
+                        "scores": [round(s, 1) for s in all_judge_scores],
+                        "judges": [d.get("judge_model", "?") for d in all_judge_details],
+                        "spread": round(max(all_judge_scores) - min(all_judge_scores), 1),
                     }
-        finally:
-            pass  # Keep judge model in cache for reuse
+                r["judge_score"] = avg_score
+                r["quality_score"] = avg_score
+                r["judge_detail"] = detail
+                print(f"[judge] OK {r['model']}  score={avg_score:.1f}"
+                      + (f" ({len(all_judge_scores)} judges)" if len(all_judge_scores) > 1 else ""))
+            else:
+                r["judge_score"] = 0
+                r["quality_score"] = 0
+                r["judge_detail"] = {
+                    "overall": 0,
+                    "error": "Judge failed after retries",
+                }
         return responses
 
     def _handle_chat(self, data: dict) -> None:
@@ -1454,6 +2104,235 @@ class ComparatorHandler(BaseHTTPRequestHandler):
     def _handle_discover_models(self) -> None:
         """GET /__discover-models?q=&sort=trending&limit=30"""
         qs = parse_qs(urlparse(self.path).query)
+
+    # ── zen_eval handler methods ──────────────────────────────────────────
+
+    def _handle_prompts_get(self) -> None:
+        """GET /__prompts?name=X&version=N&alias=A"""
+        qs = parse_qs(urlparse(self.path).query)
+        name = qs.get("name", [None])[0]
+        version = qs.get("version", [None])[0]
+        alias = qs.get("alias", [None])[0]
+        if name and (version or alias):
+            p = zen_eval.load_prompt(
+                name, version=int(version) if version else None, alias=alias
+            )
+            if p:
+                from dataclasses import asdict
+                self._send_json(200, asdict(p))
+            else:
+                self._send_json(404, {"error": "Prompt not found"})
+        else:
+            self._send_json(200, zen_eval.list_prompts(name))
+
+    def _handle_prompts_post(self, data: dict) -> None:
+        """POST /__prompts — register a new prompt version."""
+        name = data.get("name", "").strip()
+        template = data.get("template", "").strip()
+        if not name or not template:
+            self._send_json(400, {"error": "name and template required"})
+            return
+        p = zen_eval.register_prompt(
+            name=name,
+            template=template,
+            system_prompt=data.get("system_prompt", ""),
+            temperature=float(data.get("temperature", 0.7)),
+            max_tokens=int(data.get("max_tokens", 512)),
+            commit_msg=data.get("commit_msg", ""),
+        )
+        from dataclasses import asdict
+        self._send_json(201, asdict(p))
+
+    def _handle_prompt_alias(self, data: dict) -> None:
+        """POST /__prompts/alias — set or delete an alias."""
+        name = data.get("name", "").strip()
+        alias = data.get("alias", "").strip()
+        if not name or not alias:
+            self._send_json(400, {"error": "name and alias required"})
+            return
+        if data.get("delete"):
+            ok = zen_eval.delete_alias(name, alias)
+            self._send_json(200 if ok else 404, {"ok": ok})
+        else:
+            version = data.get("version")
+            if version is None:
+                self._send_json(400, {"error": "version required"})
+                return
+            ok = zen_eval.set_alias(name, alias, int(version))
+            self._send_json(200 if ok else 404, {"ok": ok})
+
+    def _handle_feedback_get(self) -> None:
+        """GET /__feedback?judge=X&limit=N or /__feedback/stats?judge=X"""
+        parsed = urlparse(self.path)
+        qs = parse_qs(parsed.query)
+        if parsed.path == "/__feedback/stats":
+            judge = qs.get("judge", [""])[0]
+            if not judge:
+                self._send_json(400, {"error": "judge parameter required"})
+                return
+            self._send_json(200, zen_eval.get_alignment_stats(judge))
+        else:
+            judge = qs.get("judge", [None])[0]
+            limit = int(qs.get("limit", [50])[0])
+            self._send_json(200, zen_eval.get_feedback_history(judge, limit))
+
+    def _handle_feedback_post(self, data: dict) -> None:
+        """POST /__feedback — record judge feedback."""
+        required = ["judge_name", "prompt", "response", "auto_score"]
+        if not all(data.get(k) is not None for k in required):
+            self._send_json(400, {"error": f"Required: {', '.join(required)}"})
+            return
+        fid = zen_eval.record_feedback(
+            judge_name=data["judge_name"],
+            prompt=data["prompt"],
+            response=data["response"],
+            auto_score=float(data["auto_score"]),
+            human_score=float(data["human_score"]) if data.get("human_score") is not None else None,
+            feedback=data.get("feedback", ""),
+        )
+        self._send_json(201, {"id": fid})
+
+    def _handle_feedback_human(self, data: dict) -> None:
+        """POST /__feedback/human — update human score for existing feedback."""
+        fid = data.get("id")
+        human_score = data.get("human_score")
+        if fid is None or human_score is None:
+            self._send_json(400, {"error": "id and human_score required"})
+            return
+        ok = zen_eval.update_human_score(
+            int(fid), float(human_score), data.get("feedback", "")
+        )
+        self._send_json(200 if ok else 404, {"ok": ok})
+
+    def _handle_judge_conversation(self, data: dict) -> None:
+        """POST /__judge/conversation — run multi-turn judges on a conversation."""
+        turns_raw = data.get("turns", [])
+        if len(turns_raw) < 2:
+            self._send_json(400, {"error": "At least 2 turns required"})
+            return
+
+        conv_id = data.get("conversation_id", f"conv_{int(time.time()*1000)}")
+        model_name = data.get("model_name", "unknown")
+        judges = data.get("judges", ["UserFrustration", "KnowledgeRetention"])
+
+        turns = [
+            zen_eval.TurnData(
+                role=t.get("role", "user"),
+                content=t.get("content", ""),
+                turn_num=i,
+                metadata=t.get("metadata", {}),
+            )
+            for i, t in enumerate(turns_raw)
+        ]
+        ctx = zen_eval.ConversationContext(
+            conversation_id=conv_id,
+            model_name=model_name,
+            turns=turns,
+            metadata=data.get("metadata", {}),
+        )
+
+        results = {}
+        from dataclasses import asdict
+        if "UserFrustration" in judges:
+            results["UserFrustration"] = asdict(zen_eval.judge_user_frustration(ctx))
+        if "KnowledgeRetention" in judges:
+            results["KnowledgeRetention"] = asdict(zen_eval.judge_knowledge_retention(ctx))
+
+        # Optionally persist the conversation
+        if data.get("save", False):
+            zen_eval.save_conversation(ctx)
+
+        self._send_json(200, {"conversation_id": conv_id, "results": results})
+
+    def _handle_judge_toolcall(self, data: dict) -> None:
+        """POST /__judge/toolcall — evaluate tool call correctness & efficiency."""
+        actual_raw = data.get("actual_calls", [])
+        expected_raw = data.get("expected_calls", [])
+
+        actual = [
+            zen_eval.ToolCall(
+                name=c.get("name", ""),
+                arguments=c.get("arguments", {}),
+                result=c.get("result"),
+            )
+            for c in actual_raw
+        ]
+        expected = [
+            zen_eval.ToolCallExpectation(
+                name=e.get("name", ""),
+                arguments=e.get("arguments"),
+                required=e.get("required", True),
+                order=e.get("order"),
+            )
+            for e in expected_raw
+        ]
+
+        from dataclasses import asdict
+        results = {}
+
+        judges = data.get("judges", ["ToolCallCorrectness", "ToolCallEfficiency"])
+        if "ToolCallCorrectness" in judges:
+            results["ToolCallCorrectness"] = asdict(
+                zen_eval.judge_tool_call_correctness(actual, expected)
+            )
+        if "ToolCallEfficiency" in judges:
+            results["ToolCallEfficiency"] = asdict(
+                zen_eval.judge_tool_call_efficiency(
+                    actual,
+                    min_expected=data.get("min_calls", 1),
+                    max_expected=data.get("max_calls"),
+                )
+            )
+
+        self._send_json(200, {"results": results})
+
+    def _handle_gateway_routes_get(self) -> None:
+        """GET /__gateway/routes — list all routes."""
+        gw = zen_eval.get_gateway()
+        self._send_json(200, gw.list_routes())
+
+    def _handle_gateway_routes_post(self, data: dict) -> None:
+        """POST /__gateway/routes — add/update a route."""
+        name = data.get("name", "").strip()
+        strategy = data.get("strategy", "").strip()
+        models = data.get("models", [])
+        if not name or not strategy or not models:
+            self._send_json(400, {"error": "name, strategy, and models required"})
+            return
+        if strategy not in ("round_robin", "weighted", "fallback", "ab_test"):
+            self._send_json(400, {"error": "strategy must be: round_robin, weighted, fallback, ab_test"})
+            return
+        gw = zen_eval.get_gateway()
+        route = zen_eval.GatewayRoute(
+            name=name, strategy=strategy, models=models,
+            config=data.get("config", {}),
+            enabled=data.get("enabled", True),
+        )
+        gw.add_route(route)
+        self._send_json(201, {"ok": True, "route": name})
+
+    def _handle_gateway_resolve(self, data: dict) -> None:
+        """POST /__gateway/resolve — resolve a route to a model."""
+        route_name = data.get("route", "").strip()
+        if not route_name:
+            self._send_json(400, {"error": "route name required"})
+            return
+        gw = zen_eval.get_gateway()
+        model = gw.resolve(route_name)
+        if model:
+            self._send_json(200, {"model": model, "route": route_name})
+        else:
+            self._send_json(404, {"error": f"Route '{route_name}' not found"})
+
+    def _handle_gateway_stats(self) -> None:
+        """GET /__gateway/stats?route=X"""
+        qs = parse_qs(urlparse(self.path).query)
+        route = qs.get("route", [""])[0]
+        if not route:
+            self._send_json(400, {"error": "route parameter required"})
+            return
+        gw = zen_eval.get_gateway()
+        self._send_json(200, gw.get_route_stats(route))
         query = qs.get("q", [""])[0][:200]  # cap query length
         sort = qs.get("sort", ["trending"])[0]
         if sort not in ("trending", "downloads", "newest", "likes"):
@@ -1799,6 +2678,11 @@ def run_server(port: int = 8123) -> None:
             sys.stderr.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
         except Exception:
             pass
+
+    # Initialize zen_eval database
+    zen_eval.init_db()
+    print("[zen_eval] Database initialized")
+
     server = ThreadingHTTPServer(("127.0.0.1", port), ComparatorHandler)
     print(f"[OK] Comparator backend listening on http://127.0.0.1:{port}")
     print("   System info: /__system-info")
