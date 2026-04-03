@@ -25,43 +25,12 @@ Browser (model_comparator.html)
         ▼        ▼
 comparator_backend.py  :8123
         │
-        ├── /__system-info        (GET)  — scan models, RAM, GPU
-        ├── /__comparison/mixed   (POST) — run models + judge (non-streaming)
-        ├── /__comparison/stream  (POST) — SSE streaming comparison
-        ├── /__download-model     (POST) — fetch GGUF from URL
-        ├── /__install-llama      (POST) — pip install llama_cpp
-        ├── /__install-status     (GET)  — install progress
-        ├── /__discover-models    (GET)  — live HuggingFace GGUF search
-        ├── /__download-status    (GET)  — download progress
-        └── /__chat               (POST) — Zena chat assistant
-```
-
-### Parallel Execution Model (Swarm Pattern)
-
-All selected models run in **true parallel** using `ThreadPoolExecutor` with `stream=False`.
-
-**How it works:**
-
-1. **Phase 1 — Pre-load** (sequential): Each model is loaded into an LRU cache (up to 8 models).
-   SSE events (`model_loading`, `model_loaded`) update progress bars in the UI.
-
-2. **Phase 2 — Parallel dispatch**: All models are submitted to a `ThreadPoolExecutor(max_workers=6)`.
-   Each thread calls `llm.create_chat_completion(stream=False)`. Because `stream=False` runs the
-   entire C++ GGML computation with the Python GIL released, threads execute genuinely in parallel.
-   As each model completes, an SSE event delivers the full result immediately.
-
-3. **Phase 3 — Judge scoring**: A separate (typically smallest) model scores each response using
-   2-pass position-bias mitigation.
-
-**Why `stream=False` instead of `stream=True`?**
-With `stream=True`, Python receives tokens via generator `yield`, which re-acquires the GIL
-on every iteration. This serialises threads — models run one-after-another despite being in
-a thread pool. With `stream=False`, a single C++ call completes the entire generation while
-the GIL is released. Wall-clock time = slowest model, not sum of all models.
-
-**Model Cache (LRU):** Up to 8 `Llama` instances stay resident in memory between runs.
-Cold-load on first comparison, near-instant on subsequent runs.
-Params: `flash_attn=True`, `n_batch=2048`, `use_mmap=True`, `use_mlock=True`.
+        ├── /__system-info      (GET)  — scan models, RAM, GPU
+        ├── /__comparison/mixed (POST) — run models + judge
+        ├── /__download-model   (POST) — fetch GGUF from URL
+        ├── /__install-llama    (POST) — pip install llama_cpp
+        ├── /__install-status   (GET)  — install progress
+        └── /__chat             (POST) — Zena chat assistant
 ```
 
 ---
@@ -74,8 +43,8 @@ Params: `flash_attn=True`, `n_batch=2048`, `use_mmap=True`, `use_mlock=True`.
 2. **Open the UI:** the bat file opens `model_comparator.html` automatically,  
    or open it manually in any modern browser.
 
-3. **First run:** The app scans configured model directories on load, starting with `C:\AI\Models`.  
-   Each found `.gguf` file becomes a selectable local model entry.
+3. **First run:** The app scans `C:\AI\Models` (and sub-directories) on load.  
+   Each found `.gguf` file becomes a selectable chip.
 
 4. **Select models** in the left panel, **type a prompt**, choose a **judge model**,  
    then click the big **RUN** button.
@@ -86,18 +55,11 @@ Params: `flash_attn=True`, `n_batch=2048`, `use_mmap=True`, `use_mlock=True`.
 
 | Method | Steps |
 |--------|-------|
-| **Local file** | Drop a `.gguf` into `C:\AI\Models`, then refresh hardware/model status in the app |
-| **Catalog cards** | Open the download modal and pick a curated card with family, quant, context, source, and fit hints |
-| **Discover tab** | Search HuggingFace GGUF repos live, then click a result card to stage it for download |
-| **Custom path** | Set `ZENAI_MODEL_DIR` or adjust `ComparatorHandler.model_dirs` in `comparator_backend.py` |
+| **Local file** | Drop a `.gguf` into `C:\AI\Models`, then click **Scan** in the app |
+| **Download tab** | Paste a HuggingFace direct-download URL and click Download |
+| **Custom path** | Edit `MODEL_DIRS` in `comparator_backend.py` to add more directories |
 
 Model scanning is automatic on page load and after each download completes.
-
-### Model cards
-The download modal exposes two card-based browsers:
-- **Catalog cards** show family, quantization, context preset, HuggingFace source, download popularity, release age, and a hardware-fit label.
-- **Discover cards** show trusted quantizer status, owner, tags, pipeline, likes, downloads, and last-update age.
-- **Selected model summary** shows size, quant, source owner, and the auto-applied preset before download starts.
 
 ---
 
@@ -130,13 +92,13 @@ Each template focuses on different scoring criteria. All output a unified JSON s
 }
 ```
 
-| Template | Value | Best for |
-|----------|-------|----------|
-| **🏥 Medical / Clinical** | `medical` | Emergency care, triage, clinical decision prompts |
-| **💬 General Assistant** | `general` | General-purpose Q&A, instruction following |
-| **💻 Code Quality** | `coding` | Programming, debugging, code review |
-| **🧠 Reasoning / Math** | `reasoning` | Logic, math, multi-step reasoning |
-| **🌍 Multilingual Quality** | `multilingual` | Translation, cross-language prompts |
+| Template | Best for |
+|----------|----------|
+| **Medical Triage** | Emergency / urgent care prompts |
+| **Clinical Decision Support** | Differential diagnosis, treatment planning |
+| **Research Analysis** | Literature review, evidence grading |
+| **Code Review** | Programming, debugging, algorithm questions |
+| **Creative Writing** | Open-ended, narrative, language quality |
 
 ---
 
@@ -144,14 +106,14 @@ Each template focuses on different scoring criteria. All output a unified JSON s
 
 The Question Bank (📚 chip row below the prompt box) contains 32 categorised test prompts:
 
-| Category | Count | Examples |
-|----------|-------|---------|
-| **Ops** | 5 | Hospital occupancy, free beds, triage summary |
-| **Emergency** | 6 | Chest pain triage, sepsis-3/qSOFA, anaphylaxis protocol |
-| **Cardiology** | 5 | ACS workup, warfarin management, CPR algorithm |
-| **Coding** | 6 | Python binary search, SQL duplicates, REST API design |
-| **Reasoning** | 5 | Bat-and-ball, logic puzzles, multi-step inference |
-| **Multilingual** | 5 | Prompts in Romanian, German, Hungarian, French |
+| Category | Examples |
+|----------|---------|
+| **Emergency** | Chest pain triage, sepsis protocol, trauma assessment |
+| **Ops** | Medication reconciliation, discharge planning |
+| **Cardiology** | ACS workup, arrhythmia management |
+| **Coding** | Python debugging, algorithm design, SQL optimisation |
+| **Reasoning** | Logic puzzles, multi-step inference |
+| **Multilingual** | Prompts in Hebrew, Arabic, Spanish, French, German |
 
 Click any chip to instantly load that prompt into the text box.
 
@@ -159,33 +121,29 @@ Click any chip to instantly load that prompt into the text box.
 
 ## Results Table
 
-After a run, the results table shows these columns:
+After a run, the results table shows 12 columns:
 
 | Column | Description |
 |--------|-------------|
+| **Rank** | Sorted by `overall` judge score (highest = 1) |
 | **Model** | Short model name (`.gguf` removed) |
-| **Response Preview** | Truncated preview (click to expand full text) |
-| **TTFT (est.)** | Estimated time-to-first-token (total_time ÷ tokens) |
-| **Total** | Total wall-clock time for the full completion |
-| **Tok/s** | Generation throughput (completion_tokens ÷ seconds) |
-| **Efficiency** | Tokens/s per GB of model file size — normalised speed metric |
+| **TTFT (s)** | Time to first token in seconds |
+| **Tokens/s** | Generation throughput |
 | **RAM ↑ (MB)** | RAM consumed during inference |
-| **Size** | Model file size on disk (MB) |
 | **Quality ★** | Overall judge score rendered as stars (0–5) |
-| **Accuracy** | Judge sub-score (0–10) |
-| **Reasoning** | Judge sub-score (0–10) |
-| **Instruction** | Did the model follow instructions? (✓ / ✗) |
-| **Safety** | Safety assessment (safe / refused / unsafe) |
-| **Cost** | Estimated cost ($0.000 for local models) |
+| **Accuracy** | Judge sub-score |
+| **Reasoning** | Judge sub-score |
+| **Instruction** | Judge sub-score |
+| **Safety** | Judge sub-score |
+| **Response** | Truncated preview (click ▶ to expand full text) |
+| **Actions** | Copy / Expand buttons |
 
 ### Metrics Summary Bar
-Above the table, per-model metric panels show side-by-side comparisons:
-- ⚡ **TOK/S** — per-model generation speed with mini bar chart
-- ⭐ **QUALITY** — per-model judge scores with quality bar
-- 🎯 **FIRST TOKEN** — per-model estimated TTFT
-- 💾 **PEAK RAM** — per-model RAM delta
-- ⏱ **FASTEST** — per-model total time
-- 📊 **EFFICIENCY** — per-model tokens/s per GB (normalised speed)
+Above the table shows the champions for the current run:
+- ⚡ **Fastest TTFT** — model with lowest time to first token
+- 🚀 **Best Tok/s** — highest throughput
+- 💾 **Peak RAM** — highest RAM delta recorded
+- ⭐ **Top Quality** — highest overall judge score
 
 ---
 
@@ -240,106 +198,33 @@ Zena is the built-in AI assistant (this app itself).
 
 ## API Reference (for LLMs)
 
-All endpoints accept/return JSON. CORS is restricted to `localhost` origins only (127.0.0.1 and localhost, any port). External origins are blocked.
-
-### `GET /__health`
-Returns server status.
-
-```json
-{ "ok": true, "ts": 1711123456.789 }
-```
+All endpoints accept/return JSON. CORS is open (`*`).
 
 ### `GET /__system-info`
-Returns detected models, system RAM, GPU info, and build recommendations.
+Returns detected models, system RAM, GPU info.
 
 ```json
 {
-  "cpu_brand": "AMD",
-  "cpu_count": 8,
-  "cpu_name": "AMD Ryzen 7 8845HS",
-  "cpu_avx2": true,
-  "cpu_avx512": false,
-  "memory_gb": 31.3,
-  "gpus": [{"name": "AMD Radeon 890M", "vendor": "AMD", "vram_gb": 8.0, "backend": "ROCm/Vulkan"}],
-  "has_llama_cpp": true,
-  "llama_cpp_version": "0.3.16",
-  "recommended_build": {"build": "ROCm / Vulkan (AMD GPU)", "flag": "rocm", "pip": "...", "reason": "...", "note": "..."},
-  "model_count": 5,
-  "models": [{"name": "Llama-3.2-3B-Instruct-Q4_K_M.gguf", "path": "C:\\AI\\Models\\...", "size_gb": 1.9}],
-  "timestamp": 1711123456.789
+  "models": [{"name": "mistral-7b.gguf", "path": "C:\\AI\\Models\\mistral-7b.gguf", "size_mb": 4096}],
+  "ram_total_mb": 32000,
+  "ram_free_mb": 18000,
+  "gpu": "NVIDIA RTX 3090"
 }
 ```
 
 ### `POST /__comparison/mixed`
-Runs a full benchmark comparison. Returns ranked results with optional judge scores.
+Runs a full benchmark comparison.
 
 ```json
 {
+  "models": ["C:\\AI\\Models\\model-a.gguf", "C:\\AI\\Models\\model-b.gguf"],
   "prompt": "Explain the Ottawa Ankle Rules.",
-  "system_prompt": "You are a helpful medical assistant.",
-  "local_models": ["C:\\AI\\Models\\model-a.gguf", "C:\\AI\\Models\\model-b.gguf"],
-  "online_models": [],
   "judge_model": "C:\\AI\\Models\\judge.gguf",
-  "judge_system_prompt": "Rate the response 0-10...",
+  "judge_template": "medical_triage",
   "max_tokens": 512,
-  "temperature": 0.7,
-  "n_ctx": 4096,
-  "top_p": 0.95,
-  "repeat_penalty": 1.1,
-  "inference_timeout": 300
+  "temperature": 0.7
 }
 ```
-
-Response:
-```json
-{
-  "prompt": "...",
-  "models_tested": 2,
-  "responses": [
-    {
-      "model": "model-a",
-      "model_path": "C:\\AI\\Models\\model-a.gguf",
-      "response": "The Ottawa Ankle Rules...",
-      "time_ms": 1234.5,
-      "tokens": 87,
-      "tokens_per_sec": 12.3,
-      "ttft_ms": 456.7,
-      "ram_delta_mb": 1200,
-      "judge_score": 8.5,
-      "quality_score": 8.5,
-      "judge_detail": {"overall": 8.5, "accuracy": 8, "reasoning": 9, "bias_passes": 2}
-    }
-  ],
-  "judge_model": "judge.gguf",
-  "timestamp": 1711123456.789
-}
-```
-
-### `POST /__comparison/stream`
-SSE streaming version of comparison. Returns `text/event-stream` with events:
-- `model_start` — model loading begins
-- `token` — each generated token streamed individually
-- `model_done` — model finished generating
-- `judge_start` / `judge_done` — judge scoring phase
-- `done` — all complete
-
-### `GET /__config`
-Returns server configuration constants.
-
-```json
-{
-  "vk_devices": "0",
-  "default_inference_timeout": 300,
-  "max_inference_timeout": 1800,
-  "max_prompt_tokens": 8192,
-  "rate_limit": {"max_requests": 30, "window_sec": 60.0}
-}
-```
-
-### `GET /__discover-models?q=llama&sort=trending&limit=30`
-Searches HuggingFace for GGUF models. Cached for 15 minutes.
-Supported UI sort values: `trending`, `downloads`, `newest`, `likes`.
-The backend maps `trending` to the current HuggingFace API sort internally.
 
 ### `POST /__chat`
 Single-turn or multi-turn chat with a local model.
@@ -362,15 +247,8 @@ Response:
 ```
 
 ### `POST /__download-model`
-Start a background download. Returns a `job_id` immediately; poll `/__download-status?job=<id>` for progress.
-
 ```json
-{ "model": "https://huggingface.co/TheBloke/Llama-2-7B-GGUF/resolve/main/llama-2-7b.Q4_K_M.gguf", "dest": "C:\\AI\\Models" }
-```
-
-Response:
-```json
-{ "ok": true, "job_id": "a1b2c3d4" }
+{ "url": "https://huggingface.co/.../model.gguf", "dest_dir": "C:\\AI\\Models" }
 ```
 
 ### `POST /__install-llama`
@@ -382,11 +260,10 @@ Triggers `pip install llama-cpp-python` with GPU flags. Poll `/__install-status`
 
 | Symptom | Fix |
 |---------|-----|
-| No models found | Put `.gguf` files in `C:\AI\Models`, or set `ZENAI_MODEL_DIR`; verify files are >50 MB |
-| Discovery search empty/error | Check internet access and try another sort; the backend caches results for 15 minutes per query |
+| No models found | Check `MODEL_DIRS` in `comparator_backend.py`; ensure `.gguf` files exist |
 | Backend not responding | Make sure `Run_me.bat` is running; check port 8123 is not blocked |
 | Judge returns `parse error` | Judge model too small or wrong template; try a larger judge |
-| GPU not used | Install `llama-cpp-python` with the recommended build shown in System Info / download modal |
+| GPU not used | Install `llama-cpp-python` with CUDA: `pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121` |
 | High RAM usage | Reduce `n_ctx` in `comparator_backend.py` or run fewer models in parallel |
 | Zena chat slow | Use a smaller/quantised model (Q4_K_M recommended for chat) |
 
@@ -395,7 +272,7 @@ Triggers `pip install llama-cpp-python` with GPU flags. Poll `/__install-status`
 ## Tips for LLMs Using This App
 
 - To test the app: `POST /__comparison/mixed` with 2 models and a short prompt.
-- Judge template names: `medical`, `general`, `coding`, `reasoning`, `multilingual`.
+- Judge template names: `medical_triage`, `clinical_decision`, `research_analysis`, `code_review`, `creative_writing`.
 - All file paths must use the **server's** filesystem path (e.g., `C:\AI\Models\...`).
 - The `messages` array in `/__chat` follows the OpenAI chat format (`role`: `user`/`assistant`/`system`).
 - Token counts and RAM figures are approximate; `llama_cpp` reports them per-run.

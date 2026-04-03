@@ -1305,14 +1305,8 @@ class ComparatorHandler(BaseHTTPRequestHandler):
     def _handle_results_get(self) -> None:
         """GET /__results?limit=50&offset=0"""
         qs = parse_qs(urlparse(self.path).query)
-        try:
-            limit = min(int(qs.get("limit", ["50"])[0]), 500)
-        except (ValueError, TypeError):
-            limit = 0
-        try:
-            offset = int(qs.get("offset", ["0"])[0])
-        except (ValueError, TypeError):
-            offset = 0
+        limit = min(int(qs.get("limit", ["50"])[0]), 500)
+        offset = int(qs.get("offset", ["0"])[0])
         self._send_json(200, db_get_results(limit, offset))
 
     def _handle_results_save(self, data: dict) -> None:
@@ -2179,10 +2173,7 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             self._send_json(200, zen_eval.get_alignment_stats(judge))
         else:
             judge = qs.get("judge", [None])[0]
-            try:
-                limit = int(qs.get("limit", [50])[0])
-            except (ValueError, TypeError):
-                limit = 0
+            limit = int(qs.get("limit", [50])[0])
             self._send_json(200, zen_eval.get_feedback_history(judge, limit))
 
     def _handle_feedback_post(self, data: dict) -> None:
