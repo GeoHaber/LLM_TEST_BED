@@ -766,7 +766,10 @@ class TestModelDiscovery:
     def test_discover_returns_json(self):
         """Discovery endpoint must return valid JSON with 'models' key."""
         resp = urllib.request.urlopen(f"{TEST_URL}/__discover-models?q=&sort=trending&limit=5", timeout=15)
-        data = json.loads(resp.read().decode())
+        try:
+            data = json.loads(resp.read().decode())
+        except json.JSONDecodeError:
+            data = {}
         assert "models" in data
 
     def test_discover_sort_validation(self):
@@ -848,7 +851,10 @@ class TestModelDiscovery:
     def test_discover_empty_query_safe(self):
         """Empty query must return valid response."""
         resp = urllib.request.urlopen(f"{TEST_URL}/__discover-models?q=", timeout=15)
-        data = json.loads(resp.read().decode())
+        try:
+            data = json.loads(resp.read().decode())
+        except json.JSONDecodeError:
+            data = {}
         assert "models" in data
 
     def test_discover_xss_in_query_param(self):

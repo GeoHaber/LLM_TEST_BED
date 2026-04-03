@@ -1,0 +1,14 @@
+pub mod _patch_catalog;
+pub mod comparator_backend;
+pub mod conftest;
+pub mod test_bug_fixes;
+pub mod test_completeness_audit;
+pub mod test_comprehensive;
+pub mod test_discovery_install;
+pub mod test_e2e_extreme;
+pub mod test_full_validation;
+pub mod test_llm_integration;
+pub mod test_xray_comprehensive;
+pub mod test_zen_eval;
+pub mod test_zombie_and_process_audit;
+pub mod zen_eval;

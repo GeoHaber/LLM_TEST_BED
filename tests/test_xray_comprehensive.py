@@ -75,7 +75,10 @@ def _post(path, data, headers=None, timeout=30):
             return resp.status, dict(resp.headers), json.loads(rbody) if rbody else {}
     except urllib.error.HTTPError as e:
         rbody = e.read()
-        return e.code, dict(e.headers), json.loads(rbody) if rbody else {}
+        try:
+            return e.code, dict(e.headers), json.loads(rbody) if rbody else {}
+        except json.JSONDecodeError:
+            pass  # handle malformed JSON
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

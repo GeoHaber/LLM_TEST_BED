@@ -2,6 +2,11 @@
 setlocal
 title Zen LLM Compare
 
+:: Global llama.cpp defaults (shared across repos)
+if "%ZENAI_LLAMA_SERVER%"=="" set "ZENAI_LLAMA_SERVER=C:\Ai\_bin\llama-server.exe"
+if "%SWARM_MODELS_DIR%"=="" set "SWARM_MODELS_DIR=C:\Ai\Models"
+if "%PATH:C:\Ai\_bin;=%"=="%PATH%" set "PATH=C:\Ai\_bin;%PATH%"
+
 set "ROOT=%~dp0"
 set "PYEXE=%LocalAppData%\Microsoft\WindowsApps\python3.13.exe"
 if exist "%PYEXE%" goto python_ready

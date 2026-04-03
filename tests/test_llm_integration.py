@@ -23,8 +23,6 @@ import time
 import urllib.error
 import urllib.request
 
-import pytest
-
 # Force UTF-8 output on Windows (avoids cp1252 encode errors) — only in CLI mode
 if __name__ == "__main__":
     if hasattr(sys.stdout, "buffer"):
@@ -50,7 +48,10 @@ BACKEND_URL = f"http://127.0.0.1:{BACKEND_PORT}"
 def _get(path: str, timeout: int = 10) -> dict:
     url = BACKEND_URL + path
     with urllib.request.urlopen(url, timeout=timeout) as resp:  # nosec B310
-        return json.loads(resp.read())
+        try:
+            return json.loads(resp.read())
+        except json.JSONDecodeError:
+            pass  # handle malformed JSON
 
 
 def _post(path: str, payload: dict, timeout: int = 300) -> dict:
@@ -113,7 +114,7 @@ def _check(condition: bool, label: str, detail: str = "") -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def _run_unit_functions() -> int:
+def _run_unit_tests() -> int:
     """Unit-test pure Python functions in comparator_backend (no HTTP)."""
     failures = 0
     print("\n\033[1m── UNIT TESTS (pure functions) ──────────────────────────────\033[0m")
@@ -171,7 +172,7 @@ def _run_unit_functions() -> int:
     return failures
 
 
-def _run_http_endpoints(model_dirs: list[str]) -> int:
+def _run_endpoint_tests(model_dirs: list[str]) -> int:
     """Integration tests against the live backend HTTP server."""
     failures = 0
     print("\n\033[1m── HTTP ENDPOINT TESTS ──────────────────────────────────────\033[0m")
@@ -214,7 +215,7 @@ def _run_http_endpoints(model_dirs: list[str]) -> int:
     return failures
 
 
-def _run_llm_inference(model_dirs: list[str], max_models: int = 6) -> int:
+def _run_inference_tests(model_dirs: list[str], max_models: int = 6) -> int:
     """Run actual inference through up to max_models GGUF models."""
     failures = 0
     print("\n\033[1m── LLM INFERENCE TESTS ─────────────────────────────────────\033[0m")
@@ -312,37 +313,6 @@ def _run_llm_inference(model_dirs: list[str], max_models: int = 6) -> int:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Pytest wrappers (must not return a value)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-_backend_started = False
-
-
-def _ensure_backend(model_dirs):
-    """Start backend once per test session for pytest runs."""
-    global _backend_started
-    if not _backend_started:
-        _start_backend_thread(model_dirs)
-        if not _wait_backend():
-            pytest.skip("Backend did not start within timeout")
-        _backend_started = True
-
-
-def test_unit_functions():
-    assert _run_unit_functions() == 0
-
-
-def test_http_endpoints(model_dirs):
-    _ensure_backend(model_dirs)
-    assert _run_http_endpoints(model_dirs) == 0
-
-
-def test_llm_inference(model_dirs):
-    _ensure_backend(model_dirs)
-    assert _run_llm_inference(model_dirs) == 0
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # Entry point
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -382,7 +352,7 @@ def main() -> int:
     total_failures = 0
 
     # ── 1. Unit tests (no server needed) ────────────────────────────────────
-    total_failures += _run_unit_functions()
+    total_failures += _run_unit_tests()
 
     # ── 2. Start or use live backend ────────────────────────────────────────
     global BACKEND_PORT, BACKEND_URL
@@ -398,10 +368,10 @@ def main() -> int:
             sys.exit(1)
 
     # ── 3. HTTP endpoint tests ───────────────────────────────────────────────
-    total_failures += _run_http_endpoints(model_dirs)
+    total_failures += _run_endpoint_tests(model_dirs)
 
     # ── 4. Actual LLM inference tests ───────────────────────────────────────
-    total_failures += _run_llm_inference(model_dirs, max_models=args.max)
+    total_failures += _run_inference_tests(model_dirs, max_models=args.max)
 
     # ── Final verdict ────────────────────────────────────────────────────────
     print("\n" + "─" * 60)
@@ -411,6 +381,44 @@ def main() -> int:
         print(f"\033[91m\033[1m  {total_failures} TEST(S) FAILED\033[0m")
     print("─" * 60)
     return total_failures
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Pytest entry points — wrap the runner functions with proper assert statements
+# so pytest correctly marks them as FAILED when a sub-check fails.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_TEST_SERVER_STARTED = threading.Event()
+_TEST_MODEL_DIRS: list[str] = []
+
+
+def _ensure_test_server(dirs: list[str]) -> None:
+    if _TEST_SERVER_STARTED.is_set():
+        return
+    _start_backend_thread(dirs)
+    if not _wait_backend():
+        raise RuntimeError("Integration test server failed to start")
+    _TEST_SERVER_STARTED.set()
+
+
+def test_unit_functions() -> None:
+    """Pytest: unit-level function checks (no server required)."""
+    failures = _run_unit_tests()
+    assert failures == 0, f"{failures} unit test(s) failed — see output above"
+
+
+def test_http_endpoints(model_dirs: list[str]) -> None:  # type: ignore[override]
+    """Pytest: HTTP API integration checks."""
+    _ensure_test_server(model_dirs)
+    failures = _run_endpoint_tests(model_dirs)
+    assert failures == 0, f"{failures} HTTP endpoint test(s) failed — see output above"
+
+
+def test_llm_inference(model_dirs: list[str]) -> None:  # type: ignore[override]
+    """Pytest: actual GGUF inference (skipped when no models are present)."""
+    _ensure_test_server(model_dirs)
+    failures = _run_inference_tests(model_dirs)
+    assert failures == 0, f"{failures} inference test(s) failed — see output above"
 
 
 if __name__ == "__main__":
