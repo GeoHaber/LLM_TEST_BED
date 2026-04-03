@@ -41,10 +41,41 @@ _vk_devices = os.environ.get('GGML_VK_VISIBLE_DEVICES', '0')
 os.environ['GGML_VK_VISIBLE_DEVICES'] = _vk_devices
 
 
+# ── Auto-detect CPU and rebuild llama-cpp-python with native flags if needed ──
+# Shared implementation lives in zen_core_libs.llm.native_build — all repos benefit.
+
+try:
+    from zen_core_libs.llm.native_build import (
+        ensure_native_build as ensure_native_llama_cpp,
+        build_status as _native_build_status_fn,
+        cpu_fingerprint as _cpu_fingerprint,
+        load_fingerprint as _load_saved_fingerprint,
+        save_fingerprint as _save_fingerprint,
+        needs_rebuild as _needs_rebuild,
+    )
+    from zen_core_libs.llm.inprocess_adapter import get_inprocess_adapter
+    _rebuild_status = _native_build_status_fn  # callable → dict
+    _zen_adapter = None  # lazily initialised on first chat call
+except ImportError:
+    # Fallback: zen_core_libs not installed — skip native build check
+    def ensure_native_llama_cpp() -> None:
+        print("[llama-build] zen_core_libs not available, skipping native build check", flush=True)
+    def _native_build_status_fn() -> dict:
+        return {"state": "unavailable", "reason": "zen_core_libs not installed"}
+    _rebuild_status = _native_build_status_fn
+    def _cpu_fingerprint() -> dict:
+        return {}
+    def _load_saved_fingerprint() -> dict | None:
+        return None
+    get_inprocess_adapter = None  # type: ignore[assignment]
+    _zen_adapter = None
+
+
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     """Handle each request in a separate thread so inference doesn't block the UI."""
 
     daemon_threads = True
+    allow_reuse_address = True  # prevent "Address already in use" on restart
 
 
 # ─ Local utility functions (formerly in zen_core_libs) ───────────────────────
@@ -620,7 +651,15 @@ def get_llama_cpp_info() -> dict:
     except Exception:
         pass
 
-    return {"installed": installed, "version": version}
+    saved = _load_saved_fingerprint() if callable(_load_saved_fingerprint) else None
+    status = _native_build_status_fn() if callable(_native_build_status_fn) else {}
+    return {
+        "installed": installed,
+        "version": version,
+        "native_build": saved is not None,
+        "cpu_fingerprint": saved.get("cpu", "") if saved else "",
+        "build_status": status.get("state", "idle") if isinstance(status, dict) else "idle",
+    }
 
 
 # ─ Alias for backward compat — tests call cb.scan_models() ──────────────────
@@ -788,17 +827,23 @@ def extract_judge_scores(raw_text: str) -> dict:
     raw = raw_text.strip()
 
     # ── Step 1: try markdown fences first ────────────────────────────────────
-    fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
-    json_str = fence_match.group(1) if fence_match else raw
+    fence_match = re.search(r"```(?:json)?\s*(.*?)\s*```", raw, re.DOTALL)
+    if fence_match:
+        # Extract balanced JSON from inside fences
+        inner = fence_match.group(1).strip()
+        balanced_inner = _extract_balanced_json(inner)
+        json_str = balanced_inner if balanced_inner else inner
+    else:
+        json_str = raw
 
     # ── Step 2: try strict JSON parse ────────────────────────────────────────
     parsed = _try_json(json_str)
 
-    # ── Step 3: find first { ... } in the raw text ──────────────────────────
+    # ── Step 3: find first balanced { ... } in the raw text ─────────────────
     if parsed is None:
-        brace_match = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
-        if brace_match:
-            parsed = _try_json(brace_match.group(0))
+        balanced = _extract_balanced_json(raw)
+        if balanced:
+            parsed = _try_json(balanced)
 
     # ── Step 4: handle nested JSON ───────────────────────────────────────────
     if parsed is not None:
@@ -816,6 +861,36 @@ def extract_judge_scores(raw_text: str) -> dict:
     # ── Step 6: normalise and clamp ──────────────────────────────────────────
     result = _normalise_scores(parsed or {})
     return result
+
+
+def _extract_balanced_json(text: str) -> str | None:
+    """Find the first balanced {...} block in *text*, handling nested braces and strings."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\" and in_str:
+            escape = True
+            continue
+        if c == '"' and not escape:
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
 
 
 def _try_json(text: str) -> dict | None:
@@ -1127,14 +1202,18 @@ class ComparatorHandler(BaseHTTPRequestHandler):
     """HTTP request handler for model comparator endpoints."""
 
     # Model directories: env var > common locations > home-based > project-local
-    model_dirs = [
-        d for d in [
+    # Deduplicate via resolved (canonical) paths to avoid scanning the same dir twice.
+    model_dirs = list({
+        str(Path(d).resolve()): d for d in [
             os.environ.get("ZENAI_MODEL_DIR", ""),
+            os.environ.get("SWARM_MODELS_DIR", ""),
+            "C:\\Ai\\Models",
             "C:\\AI\\Models",
             str(Path.home() / "AI" / "Models"),
+            str(Path.home() / "Ai" / "Models"),
             str(Path(__file__).resolve().parent / "models"),
         ] if d and Path(d).is_dir()
-    ] or [str(Path.home() / "AI" / "Models")]
+    }.values()) or [str(Path.home() / "AI" / "Models")]
 
     # ── CORS preflight ────────────────────────────────────────────────────────
     def do_OPTIONS(self) -> None:
@@ -1150,6 +1229,8 @@ class ComparatorHandler(BaseHTTPRequestHandler):
             self._handle_system_info()
         elif self.path == "/__health":
             self._send_json(200, {"ok": True, "ts": time.time()})
+        elif self.path == "/__build-status":
+            self._send_json(200, _native_build_status_fn() if callable(_native_build_status_fn) else dict(_native_build_status_fn))
         elif self.path == "/__config":
             self._send_json(200, {
                 "vk_devices": os.environ.get("GGML_VK_VISIBLE_DEVICES", "0"),
@@ -1584,7 +1665,12 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                     )
 
                     elapsed_ms = (time.time() - t0) * 1000
-                    response_text = out["choices"][0]["message"]["content"] or ""
+                    msg = out["choices"][0]["message"]
+                    response_text = (msg.get("content") or "").strip()
+                    # Reasoning models (DeepSeek-R1, Qwen3.5, GLM) put chain-of-thought
+                    # in reasoning_content and leave content empty — extract from there.
+                    if not response_text and msg.get("reasoning_content"):
+                        response_text = msg["reasoning_content"].strip()
                     completion_tokens = out.get("usage", {}).get("completion_tokens", 0)
                     if not completion_tokens:
                         completion_tokens = max(1, count_tokens(response_text))
@@ -1817,7 +1903,10 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                 )
 
                 elapsed_ms = (time.time() - t0) * 1000
-                response_text = out["choices"][0]["message"]["content"] or ""
+                msg = out["choices"][0]["message"]
+                response_text = (msg.get("content") or "").strip()
+                if not response_text and msg.get("reasoning_content"):
+                    response_text = msg["reasoning_content"].strip()
                 completion_tokens = out.get("usage", {}).get("completion_tokens", 0)
                 if not completion_tokens:
                     completion_tokens = max(1, count_tokens(response_text))
@@ -1926,11 +2015,19 @@ class ComparatorHandler(BaseHTTPRequestHandler):
     def _resolve_judge_path(self, judge_model: str, local_models: list[str]) -> str | None:
         """Return the filesystem path to use as judge model."""
         if judge_model == "local:best":
-            # Pick smallest model — the judge task is simple (scoring/comparing)
-            # so we use the lightest model for speed.
-            best = min(
-                local_models,
-                key=lambda p: os.path.getsize(p) if os.path.exists(p) else float("inf"),
+            # Pick the LARGEST model as judge — quality matters more than speed
+            # for scoring. A 135M model can't judge a 9B model's output.
+            # Exclude non-text models (mmproj, embedding) by name.
+            candidates = [
+                p for p in local_models
+                if os.path.exists(p)
+                and not any(skip in os.path.basename(p).lower() for skip in ("mmproj", "embed", "ggml-model"))
+            ]
+            if not candidates:
+                candidates = local_models
+            best = max(
+                candidates,
+                key=lambda p: os.path.getsize(p) if os.path.exists(p) else 0,
                 default=None,
             )
             return best
@@ -2014,7 +2111,12 @@ class ComparatorHandler(BaseHTTPRequestHandler):
                             create_kwargs.pop("response_format", None)
                             out = llm.create_chat_completion(**create_kwargs)
 
-                        raw = out["choices"][0]["message"]["content"].strip()  # type: ignore[index]
+                        _jmsg = out["choices"][0]["message"]  # type: ignore[index]
+                        raw = (_jmsg.get("content") or _jmsg.get("reasoning_content") or "").strip()
+                        if not raw:
+                            print(f"[judge] WARN empty response from {judge_name} for {r['model']}", flush=True)
+                        else:
+                            print(f"[judge] raw ({judge_name}, len={len(raw)}): {raw[:200]}", flush=True)
                         jd = extract_judge_scores(raw)
                         score = float(jd.get("overall", 0))
                         jd["judge_model"] = judge_name
@@ -2068,35 +2170,39 @@ class ComparatorHandler(BaseHTTPRequestHandler):
         max_tokens = min(int(data.get("max_tokens", 512)), 2048)
         temperature = float(data.get("temperature", 0.4))
         try:
-            import gc
-
-            import llama_cpp
-
-            llm = _get_or_load_model(model_path, 4096)
-            full_messages = _build_messages(system, messages[0]["content"] if messages else "", model_path) if len(messages) <= 1 else [{"role": "system", "content": system}] + messages
-            # For multi-turn chat, try with system role; fall back if it fails
-            try:
-                out = llm.create_chat_completion(
-                    full_messages,
+            # Use zen_core_libs InProcessAdapter (single source of truth)
+            global _zen_adapter
+            if get_inprocess_adapter is not None:
+                if _zen_adapter is None:
+                    _zen_adapter = get_inprocess_adapter(max_models=8, default_n_ctx=4096)
+                reply = _zen_adapter.chat(
+                    model_path,
+                    system=system,
+                    messages=messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    stream=False,
                 )
-            except ValueError:
-                # Model doesn't support system role — fold into first user msg
-                if full_messages and full_messages[0].get("role") == "system":
-                    sys_text = full_messages.pop(0)["content"]
-                    if full_messages and full_messages[0].get("role") == "user":
-                        full_messages[0]["content"] = sys_text + "\n\n" + full_messages[0]["content"]
-                    else:
-                        full_messages.insert(0, {"role": "user", "content": sys_text})
-                out = llm.create_chat_completion(
-                    full_messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    stream=False,
-                )
-            reply = out["choices"][0]["message"]["content"]  # type: ignore[index]
+            else:
+                # Fallback: direct llama_cpp if zen_core_libs unavailable
+                import llama_cpp
+                llm = _get_or_load_model(model_path, 4096)
+                full_messages = _build_messages(system, messages[0]["content"] if messages else "", model_path) if len(messages) <= 1 else [{"role": "system", "content": system}] + messages
+                try:
+                    out = llm.create_chat_completion(
+                        full_messages, max_tokens=max_tokens, temperature=temperature, stream=False,
+                    )
+                except ValueError:
+                    if full_messages and full_messages[0].get("role") == "system":
+                        sys_text = full_messages.pop(0)["content"]
+                        if full_messages and full_messages[0].get("role") == "user":
+                            full_messages[0]["content"] = sys_text + "\n\n" + full_messages[0]["content"]
+                        else:
+                            full_messages.insert(0, {"role": "user", "content": sys_text})
+                    out = llm.create_chat_completion(
+                        full_messages, max_tokens=max_tokens, temperature=temperature, stream=False,
+                    )
+                _cmsg = out["choices"][0]["message"]
+                reply = (_cmsg.get("content") or _cmsg.get("reasoning_content") or "").strip()
             self._send_json(200, {"response": reply})
         except Exception as e:
             self._send_json(500, {"error": str(e)})
@@ -2665,6 +2771,45 @@ def _scout_tool_ecosystem() -> dict:
         return {"error": str(exc)}
 
 
+def _kill_zombies_on_port(port: int) -> int:
+    """Kill any leftover processes listening on *port*.  Returns count killed."""
+    killed = 0
+    my_pid = os.getpid()
+    try:
+        import psutil
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.laddr and conn.laddr.port == port and conn.status == "LISTEN":
+                if conn.pid and conn.pid != my_pid:
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        proc.terminate()
+                        proc.wait(timeout=3)
+                        killed += 1
+                        print(f"[cleanup] Killed zombie PID {conn.pid} on port {port}", flush=True)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                        pass
+    except ImportError:
+        # psutil not available — try netstat fallback on Windows
+        if os.name == "nt":
+            import subprocess
+            try:
+                out = subprocess.check_output(
+                    ["netstat", "-ano"], text=True, timeout=5
+                )
+                for line in out.splitlines():
+                    if f":{port}" in line and "LISTENING" in line:
+                        parts = line.split()
+                        pid = int(parts[-1])
+                        if pid != my_pid:
+                            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                                           capture_output=True, timeout=5)
+                            killed += 1
+                            print(f"[cleanup] Killed zombie PID {pid} on port {port}", flush=True)
+            except Exception:
+                pass
+    return killed
+
+
 def run_server(port: int = 8123) -> None:
     """Start the HTTP server."""
     # Ensure emoji/unicode in log lines don't crash on Windows cp1252 consoles
@@ -2678,6 +2823,15 @@ def run_server(port: int = 8123) -> None:
             sys.stderr.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
         except Exception:
             pass
+
+    # Kill any zombie processes from previous runs
+    zombies = _kill_zombies_on_port(port)
+    if zombies:
+        print(f"[cleanup] Killed {zombies} zombie process(es) on port {port}", flush=True)
+        import time as _t; _t.sleep(0.5)  # let OS release the port
+
+    # Auto-detect CPU and rebuild llama-cpp-python with native flags if needed
+    ensure_native_llama_cpp()
 
     # Initialize zen_eval database
     zen_eval.init_db()
@@ -2698,7 +2852,22 @@ def run_server(port: int = 8123) -> None:
             print(f"[cache] warm-up error: {exc}")
 
     threading.Thread(target=_warm_cache, daemon=True).start()
-    server.serve_forever()
+
+    # Graceful shutdown on Ctrl+C / SIGTERM
+    import signal
+
+    def _shutdown(signum, frame):
+        print(f"\n[shutdown] Signal {signum} received, stopping server...", flush=True)
+        server.shutdown()
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        print("[shutdown] Server closed cleanly", flush=True)
 
 
 if __name__ == "__main__":

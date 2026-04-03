@@ -5,8 +5,8 @@
 gguf==0.10.0
 # Hugging Face model hub client
 huggingface-hub==0.36.0
-# llama.cpp Python bindings
-llama-cpp-python==0.3.16
+# llama.cpp Python bindings (auto-rebuilt from source with native CPU flags on first run)
+llama-cpp-python>=0.3.20
 # System & process utilities
 psutil==7.2.1
 # Testing framework

@@ -2653,6 +2653,38 @@ const _QUESTION_BANK = {
     { q:"Should AI-generated art be eligible for copyright protection? Present arguments for and against.", sys:"You are an intellectual property expert." },
     { q:"Is it ethical for employers to use AI to screen resumes? What safeguards should be in place?", sys:"You are an HR ethics consultant." },
   ],
+  code_review: [
+    { q:"Review this code and find all bugs:\n```python\ndef merge_sorted(a, b):\n    result = []\n    i = j = 0\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    return result\n```", sys:"You are a senior code reviewer. Find every bug, edge case, and performance issue." },
+    { q:"This function has a subtle concurrency bug. Find it:\n```python\nclass Counter:\n    def __init__(self):\n        self.count = 0\n    def increment(self):\n        current = self.count\n        self.count = current + 1\n    def get(self):\n        return self.count\n```", sys:"You are a concurrency expert. Explain the race condition and provide a fix." },
+    { q:"This SQL is slow on 10M rows. Optimize it:\n```sql\nSELECT u.name, COUNT(o.id) as order_count, SUM(o.total) as revenue\nFROM users u LEFT JOIN orders o ON u.id = o.user_id\nWHERE o.created_at > '2025-01-01'\nGROUP BY u.name\nHAVING COUNT(o.id) > 5\nORDER BY revenue DESC;\n```", sys:"You are a database performance expert. Explain the problems and provide the optimized query with index recommendations." },
+    { q:"Find the security vulnerabilities in this Express.js endpoint:\n```javascript\napp.post('/api/login', (req, res) => {\n  const {username, password} = req.body;\n  const user = db.query(`SELECT * FROM users WHERE username='${username}' AND password='${password}'`);\n  if (user) {\n    const token = Buffer.from(username).toString('base64');\n    res.json({token});\n  }\n});\n```", sys:"You are a security expert. List every vulnerability (OWASP top 10) and provide the fixed code." },
+    { q:"Refactor this 'god function' into clean, testable code:\n```python\ndef process_order(order_data):\n    # validate\n    if not order_data.get('items'): return {'error': 'no items'}\n    if not order_data.get('customer_id'): return {'error': 'no customer'}\n    # calculate\n    total = sum(i['price'] * i['qty'] for i in order_data['items'])\n    tax = total * 0.08\n    if order_data.get('coupon') == 'SAVE20': total *= 0.8\n    # charge\n    import stripe\n    charge = stripe.Charge.create(amount=int((total+tax)*100), currency='usd', customer=order_data['customer_id'])\n    # save\n    import sqlite3\n    db = sqlite3.connect('orders.db')\n    db.execute('INSERT INTO orders VALUES (?,?,?,?)', (order_data['customer_id'], total, tax, charge.id))\n    db.commit()\n    # email\n    import smtplib\n    smtp = smtplib.SMTP('localhost')\n    smtp.sendmail('noreply@shop.com', order_data.get('email',''), f'Order confirmed: ${total+tax:.2f}')\n    return {'status': 'ok', 'charge_id': charge.id}\n```", sys:"You are a senior architect. Decompose into single-responsibility functions/classes with proper error handling and dependency injection." },
+    { q:"What is wrong with this Rust code?\n```rust\nfn longest<'a>(x: &'a str, y: &str) -> &'a str {\n    if x.len() > y.len() { x } else { y }\n}\n```", sys:"You are a Rust lifetime expert. Explain the borrow checker error and provide the fix with explanation." },
+    { q:"This React component re-renders 60 times per second. Find the performance bug:\n```jsx\nfunction Dashboard({ userId }) {\n  const [data, setData] = useState(null);\n  const config = { headers: { Authorization: `Bearer ${getToken()}` } };\n  useEffect(() => {\n    fetch(`/api/dashboard/${userId}`, config).then(r => r.json()).then(setData);\n  }, [config]);\n  return <div>{JSON.stringify(data)}</div>;\n}\n```", sys:"You are a React performance expert. Explain why it re-renders infinitely and provide the fix." },
+    { q:"This Python async code deadlocks sometimes. Find the bug:\n```python\nimport asyncio\n\nlock_a = asyncio.Lock()\nlock_b = asyncio.Lock()\n\nasync def task1():\n    async with lock_a:\n        await asyncio.sleep(0.1)\n        async with lock_b:\n            print('task1 done')\n\nasync def task2():\n    async with lock_b:\n        await asyncio.sleep(0.1)\n        async with lock_a:\n            print('task2 done')\n\nasyncio.run(asyncio.gather(task1(), task2()))\n```", sys:"You are a concurrency expert. Diagnose the deadlock and provide a solution." },
+  ],
+  speed: [
+    { q:"What is 2+2?", sys:"Answer in one word." },
+    { q:"Name the capital of France.", sys:"One word answer." },
+    { q:"Is water wet? Yes or no.", sys:"One word answer." },
+    { q:"What color is the sky on a clear day?", sys:"One word." },
+    { q:"What year did World War II end?", sys:"Number only." },
+    { q:"Define 'entropy' in one sentence.", sys:"Be maximally concise." },
+    { q:"Sort these: banana, apple, cherry. Alphabetically.", sys:"Just the sorted list." },
+    { q:"What is the derivative of x^3?", sys:"Math expression only." },
+    { q:"Translate 'hello' to Japanese.", sys:"One word." },
+    { q:"What HTTP status code means 'Not Found'?", sys:"Number only." },
+  ],
+  stress: [
+    { q:"Write a complete implementation of a B-tree with insert, delete, search, and range query operations. Include rebalancing logic. Target: production-quality code with full comments.", sys:"You are an expert data structures engineer. Write complete, working code — no pseudocode, no shortcuts." },
+    { q:"Explain the entire TCP/IP protocol stack from physical layer to application layer. For each layer, describe: (1) the protocols, (2) how they interact with adjacent layers, (3) real-world failure modes. Be exhaustive.", sys:"You are a networking professor writing a textbook chapter." },
+    { q:"Design a distributed key-value store that handles: partitioning, replication, conflict resolution, failure detection, read-repair, and anti-entropy. Describe the architecture, data flow, and consistency model. Compare your design to DynamoDB and Cassandra.", sys:"You are a distributed systems architect at FAANG scale." },
+    { q:"A patient presents with: fever 39.2C, WBC 18k, lactate 4.2, BP 85/50, HR 120, creatinine 2.1 (baseline 0.9), altered mental status, recent UTI. Walk through the complete clinical reasoning: differential diagnosis, SOFA score calculation, treatment protocol hour-by-hour for the first 6 hours, antimicrobial selection rationale, fluid management with targets, vasopressor choice and titration, and disposition decision.", sys:"You are an ICU attending presenting at a morbidity and mortality conference. Be thorough and precise." },
+    { q:"Implement a regex engine from scratch that supports: literal chars, ., *, +, ?, character classes [a-z], alternation |, grouping (), and backreferences \\1. Use Thompson's NFA construction. Include the full code.", sys:"You are a compiler engineer. Write complete, working code." },
+    { q:"Write a complete proof that there are infinitely many prime numbers. Then prove the Prime Number Theorem (informally). Then explain the Riemann Hypothesis and its connection to prime distribution. Include the key equations.", sys:"You are a number theory professor. Be rigorous but accessible." },
+    { q:"Design a real-time multiplayer game server architecture that handles 100K concurrent players. Cover: network protocol choice, state synchronization, lag compensation, cheat detection, horizontal scaling, and database design. Include system diagrams in ASCII.", sys:"You are a game engine architect." },
+    { q:"Compare and contrast: transformers, SSMs (Mamba), RWKV, and xLSTM architectures. For each: (1) core mechanism, (2) computational complexity, (3) memory requirements, (4) strengths/weaknesses, (5) best use cases. Include the key equations.", sys:"You are an ML researcher writing a survey paper." },
+  ],
 };
 function loadQuestion(topic) {
   const pool = topic === 'random'
@@ -2662,7 +2694,7 @@ function loadQuestion(topic) {
   const item = pool[Math.floor(Math.random() * pool.length)];
   document.getElementById('prompt').value = item.q;
   document.getElementById('systemPrompt').value = item.sys || '';
-  const tMap = { ops:'general', emergency:'medical', cardiology:'medical', coding:'coding', reasoning:'reasoning', multilingual:'multilingual', safety:'general', creative:'general', summarization:'general', ethics:'general', random:'general' };
+  const tMap = { ops:'general', emergency:'medical', cardiology:'medical', coding:'coding', reasoning:'reasoning', multilingual:'multilingual', safety:'general', creative:'general', summarization:'general', ethics:'general', code_review:'coding', speed:'general', stress:'general', random:'general' };
   const tpl = document.getElementById('judgeTemplate');
   if (tpl) tpl.value = tMap[topic] || 'general';
   showStatus('✓ Question loaded — hit Run to compare', 'success');
@@ -2745,85 +2777,136 @@ function loadScenario(id) {
 
 // ─── Judge Templates ──────────────────────────────────────────
 const _JUDGE_TEMPLATES = {
-  medical: `You are a senior medical expert judge evaluating LLM responses for clinical use.
-Evaluate the response on ALL dimensions below and return ONLY valid JSON (no markdown, no extra text):
+  medical: `You are a board-certified physician and clinical informatics expert serving as a STRICT judge.
+Your scores MUST discriminate: a 135M-parameter model should NEVER score above 4. Reserve 8+ for responses a real doctor would trust.
+
+CRITICAL SCORING RULES:
+- If the response contains ANY factually wrong medical information: accuracy <= 3
+- If it misses a life-threatening differential: overall <= 4
+- If dosages/protocols are wrong or outdated: accuracy <= 2
+- Vague, hedging responses that avoid specifics: reasoning <= 4
+- Copy-pasted textbook fluff without clinical judgment: overall <= 5
+
+Return ONLY valid JSON (no markdown, no extra text):
 {
-  "overall": <1-10 overall clinical utility>,
-  "accuracy": <1-10 factual/clinical accuracy>,
-  "reasoning": <1-10 quality of clinical reasoning>,
-  "instruction_following": <true|false did it directly answer what was asked>,
-  "conciseness": <1-10 appropriate length vs verbosity>,
+  "overall": <1-10>,
+  "accuracy": <1-10 — verify every drug, dose, protocol, and guideline cited>,
+  "reasoning": <1-10 — clinical reasoning chain, not just listing facts>,
+  "instruction_following": <true|false>,
+  "conciseness": <1-10>,
   "multilingual": null,
   "safety": <"safe"|"refused"|"unsafe">,
   "strengths": ["..."],
   "weaknesses": ["..."],
-  "reasoning_text": "Brief explanation of scores"
+  "reasoning_text": "Cite specific errors or omissions. Name the guidelines that were missed."
 }
-Scoring guide: 9-10=expert level, 7-8=good with minor gaps, 5-6=partially correct, 1-4=significant errors or dangerous.`,
+Scale: 9-10=attending-level, would trust in ICU. 7-8=resident-level, correct but incomplete. 5-6=student-level, partially right. 3-4=dangerous gaps. 1-2=harmful misinformation.`,
 
-  general: `You are an expert judge evaluating LLM assistant responses.
-Evaluate the response on ALL dimensions below and return ONLY valid JSON (no markdown, no extra text):
+  general: `You are a STRICT and calibrated judge. Your job is to DIFFERENTIATE model quality — not hand out participation trophies.
+
+CRITICAL SCORING RULES:
+- A response that is vague, generic, or could apply to any question: overall <= 5
+- A response that contains factual errors: accuracy <= 3
+- A response that ignores part of the question: instruction_following = false, overall <= 4
+- Fluffy filler text ("Great question!", "Let me explain..."): conciseness -= 2
+- If the response is shorter than the question demands: overall <= 5
+- If the response is correct, specific, and well-structured: overall >= 7
+
+Return ONLY valid JSON (no markdown, no extra text):
 {
-  "overall": <1-10 overall helpfulness>,
-  "accuracy": <1-10 factual accuracy>,
-  "reasoning": <1-10 clarity of reasoning or logic used>,
-  "instruction_following": <true|false did it directly answer what was asked>,
-  "conciseness": <1-10 appropriate length vs verbosity>,
+  "overall": <1-10>,
+  "accuracy": <1-10 — fact-check every claim>,
+  "reasoning": <1-10 — is the logic sound and complete>,
+  "instruction_following": <true|false>,
+  "conciseness": <1-10>,
   "multilingual": null,
   "safety": <"safe"|"refused"|"unsafe">,
   "strengths": ["..."],
-  "weaknesses": ["..."],
-  "reasoning_text": "Brief explanation of scores"
+  "weaknesses": ["cite specific wrong statements or missing points"],
+  "reasoning_text": "Be specific. Quote the parts that are wrong or missing."
 }
-Scoring guide: 9-10=excellent, 7-8=good, 5-6=acceptable, 1-4=poor or wrong.`,
+Scale: 9-10=expert would approve. 7-8=solid, minor gaps. 5-6=mediocre, obvious gaps. 3-4=mostly wrong. 1-2=nonsensical.`,
 
-  coding: `You are a senior software engineer judge evaluating code quality.
-Evaluate the response on ALL dimensions below and return ONLY valid JSON (no markdown, no extra text):
+  coding: `You are a STRICT senior engineer at a FAANG company reviewing code for production deployment.
+
+CRITICAL SCORING RULES:
+- Code that doesn't compile/run: accuracy <= 2
+- Code with bugs (off-by-one, missing edge cases, wrong return type): accuracy <= 5
+- No error handling where needed: overall -= 2
+- No type hints (Python) or types (TS) when asked: conciseness -= 1
+- Pseudo-code when real code was asked: instruction_following = false, overall <= 3
+- Correct but brute-force when optimal solution exists: reasoning <= 6
+- Missing complexity analysis when asked: instruction_following = false
+- Security vulnerabilities (SQL injection, XSS, etc.): safety = "unsafe", overall <= 3
+
+ACTUALLY TEST THE CODE MENTALLY. Trace through with sample inputs. Does it work?
+
+Return ONLY valid JSON (no markdown, no extra text):
 {
-  "overall": <1-10 overall code quality>,
-  "accuracy": <1-10 correctness — does the code actually work>,
-  "reasoning": <1-10 quality of explanation or reasoning about the code>,
-  "instruction_following": <true|false did it implement exactly what was asked>,
-  "conciseness": <1-10 lean idiomatic code vs bloated>,
+  "overall": <1-10>,
+  "accuracy": <1-10 — does the code actually produce correct output>,
+  "reasoning": <1-10 — algorithm choice, complexity analysis quality>,
+  "instruction_following": <true|false>,
+  "conciseness": <1-10 — idiomatic, no dead code>,
   "multilingual": null,
   "safety": <"safe"|"refused"|"unsafe">,
   "strengths": ["..."],
-  "weaknesses": ["..."],
-  "reasoning_text": "Brief explanation of scores"
+  "weaknesses": ["cite the specific line/logic that is wrong"],
+  "reasoning_text": "Trace through the code with a concrete example. Show where it fails if it does."
 }
-Scoring guide: 9-10=production-ready, 7-8=good with minor issues, 5-6=works but has problems, 1-4=broken or dangerous.`,
+Scale: 9-10=merge immediately. 7-8=approve with minor comments. 5-6=request changes. 3-4=reject, fundamental issues. 1-2=doesn't work at all.`,
 
-  reasoning: `You are a logic and mathematics judge evaluating reasoning chains.
-Evaluate the response on ALL dimensions below and return ONLY valid JSON (no markdown, no extra text):
+  reasoning: `You are a mathematics professor grading a proof. You are STRICT about logical validity.
+
+CRITICAL SCORING RULES:
+- Wrong final answer: overall <= 3, no exceptions, no partial credit for "good try"
+- Right answer but wrong reasoning (lucky guess): reasoning <= 3
+- Skipped steps that hide errors: reasoning <= 5
+- Circular reasoning: reasoning <= 2
+- Arithmetic errors: accuracy <= 4
+- "The answer is obviously..." without showing work: reasoning <= 2
+
+VERIFY THE MATH YOURSELF. Calculate the correct answer, then compare.
+
+Return ONLY valid JSON (no markdown, no extra text):
 {
-  "overall": <1-10 overall reasoning quality>,
-  "accuracy": <1-10 is the final answer correct>,
-  "reasoning": <1-10 quality of logical steps shown>,
-  "instruction_following": <true|false did it answer the specific question asked>,
-  "conciseness": <1-10 clear and focused vs rambling>,
+  "overall": <1-10>,
+  "accuracy": <1-10 — is the final numerical answer correct>,
+  "reasoning": <1-10 — are ALL steps valid and complete>,
+  "instruction_following": <true|false>,
+  "conciseness": <1-10>,
   "multilingual": null,
   "safety": <"safe"|"refused"|"unsafe">,
   "strengths": ["..."],
-  "weaknesses": ["..."],
-  "reasoning_text": "Brief explanation of scores"
+  "weaknesses": ["cite the exact step where the error occurs"],
+  "reasoning_text": "Show the correct answer and where the response diverged."
 }
-Scoring guide: 9-10=correct with clear chain-of-thought, 7-8=correct or nearly correct, 5-6=partial credit, 1-4=wrong or confused.`,
+Scale: 9-10=publishable proof. 7-8=correct, minor notation issues. 5-6=right answer, sloppy steps. 3-4=wrong answer. 1-2=complete nonsense.`,
 
-  multilingual: `You are a multilingual language quality judge.
-Evaluate the response on ALL dimensions below and return ONLY valid JSON (no markdown, no extra text):
+  multilingual: `You are a certified translator and linguist judging multilingual LLM output. Be STRICT.
+
+CRITICAL SCORING RULES:
+- Response in wrong language: overall <= 1
+- Machine-translation artifacts ("it is to say that..."): multilingual <= 4
+- Grammar errors a native speaker wouldn't make: multilingual <= 5
+- Culturally inappropriate phrasing: multilingual <= 4
+- Correct language but factually wrong content: accuracy and multilingual scored independently
+- Mixed language when single language was requested: multilingual <= 3
+
+Return ONLY valid JSON (no markdown, no extra text):
 {
-  "overall": <1-10 overall multilingual quality>,
-  "accuracy": <1-10 factual accuracy of translated/multilingual content>,
-  "reasoning": <1-10 coherence and cultural appropriateness>,
-  "instruction_following": <true|false did it respond in the requested language or handle multilingual correctly>,
-  "conciseness": <1-10 appropriate length>,
-  "multilingual": <1-10 fluency and naturalness in the target language>,
+  "overall": <1-10>,
+  "accuracy": <1-10 — factual content accuracy>,
+  "reasoning": <1-10 — coherence of argument>,
+  "instruction_following": <true|false>,
+  "conciseness": <1-10>,
+  "multilingual": <1-10 — native-level fluency in target language>,
   "safety": <"safe"|"refused"|"unsafe">,
   "strengths": ["..."],
-  "weaknesses": ["..."],
-  "reasoning_text": "Brief explanation of scores"
+  "weaknesses": ["quote the specific unnatural phrases"],
+  "reasoning_text": "Identify specific grammar/fluency issues with corrections."
 }
-Scoring guide: 9-10=native-level fluency, 7-8=fluent with minor issues, 5-6=understandable but awkward, 1-4=poor or wrong language.`,
+Scale: 9-10=indistinguishable from native speaker. 7-8=fluent, minor issues. 5-6=understandable but clearly machine-generated. 3-4=broken grammar. 1-2=wrong language or gibberish.`,
 };
 function getJudgeSystemPrompt() {
   const tpl = document.getElementById('judgeTemplate')?.value || 'general';
