@@ -2,16 +2,27 @@
 """
 Download a GGUF model into MODEL_CACHE_DIR (default: ./models).
 
-Presets (when MODEL_REPO_ID is not set):
+Built-in presets (when MODEL_REPO_ID is not set):
   llama32   — DEFAULT: Llama-3.2-3B-Instruct Q4_K_M (~2 GB; may need HF token if gated)
   tinyllama — TinyLlama-1.1B chat (~0.6 GB)
   gccl      — GCCL-Medical-LLM-8B Q4_K_M (~4.7 GB)
 
+If zen_core_libs is installed, all 23+ catalog models are also available as presets
+(e.g. gemma-4-26b, gemma-4-12b, devstral-small-24b, qwen3.5-9b, etc.).
+
+Profiles (higher-level: preset + benchmark criteria + server params):
+  --profile general      Llama 3.2 3B — fast, good for scheduling/reporting
+  --profile medical      GCCL-Medical-LLM-8B — domain-tuned for clinical queries
+  --profile lightweight  TinyLlama 1.1B — minimal resources, demo/testing only
+  --profile gemma4       Gemma 4 26B-A4B MoE — multimodal + thinking, 14.5 GB
+  --profile gemma4-small Gemma 4 E4B — efficient 4.5B multimodal, 2.8 GB
+  --profile code         Devstral Small 24B — coding flagship, 13.3 GB
+
 Usage:
-  python download_model.py                  # Llama-3.2-3B-Instruct (default)
-  python download_model.py llama32
-  python download_model.py tinyllama
-  python download_model.py gccl
+  python download_model.py                         # Llama-3.2-3B-Instruct (default)
+  python download_model.py gemma-4-26b             # Gemma 4 MoE from zen_core_libs catalog
+  python download_model.py --profile gemma4        # Gemma 4 with benchmark criteria
+  python download_model.py --profile gemma4-small  # Efficient 4.5B multimodal
 
 Env override (wins over preset):
   MODEL_REPO_ID    Hugging Face repo id
@@ -115,6 +126,39 @@ PRESETS: dict[str, tuple[str, str]] = {
     ),
 }
 
+# ── Bridge to zen_core_libs catalog (single source of truth) ─────────────
+# Imports the full curated catalog so `python download_model.py gemma4` etc. work.
+# Falls back gracefully if zen_core_libs is not installed.
+def _load_zen_catalog_presets() -> dict[str, tuple[str, str]]:
+    """Import MODEL_CATALOG from zen_core_libs and convert to preset format."""
+    try:
+        from zen_core_libs.acquire.model_hub import MODEL_CATALOG
+    except ImportError:
+        return {}
+    extra: dict[str, tuple[str, str]] = {}
+    for m in MODEL_CATALOG:
+        # Skip models already in PRESETS (local presets take precedence)
+        if m.id in PRESETS:
+            continue
+        extra[m.id] = (m.repo_id, m.filename)
+    return extra
+
+# Merge zen_core_libs catalog into PRESETS (local defs win on conflict)
+PRESETS.update(_load_zen_catalog_presets())
+
+# Convenience aliases for common downloads
+_ALIASES: dict[str, str] = {
+    "gemma4": "gemma-4-26b",
+    "gemma4-small": "gemma-4-12b",
+    "gemma4-tiny": "gemma-4-3b",
+    "devstral": "devstral-small-24b",
+    "qwen3": "qwen3.5-9b",
+    "deepseek": "deepseek-r1-qwen-14b",
+}
+for alias, target in _ALIASES.items():
+    if alias not in PRESETS and target in PRESETS:
+        PRESETS[alias] = PRESETS[target]
+
 # Model profiles — higher-level than presets, include benchmark acceptance criteria
 # and recommended server parameters for different workloads.
 MODEL_PROFILES: dict[str, dict] = {
@@ -149,6 +193,39 @@ MODEL_PROFILES: dict[str, dict] = {
         "benchmark": {
             "min_tokens_per_sec": 20,
             "max_first_token_ms": 1000,
+        },
+    },
+    "gemma4": {
+        "preset": "gemma-4-26b",
+        "description": "Gemma 4 26B-A4B MoE — only 4B active, 256K ctx, multimodal + thinking",
+        "size_gb": 14.5,
+        "recommended_ctx": 32768,
+        "temperature": 0.7,
+        "benchmark": {
+            "min_tokens_per_sec": 8,
+            "max_first_token_ms": 3000,
+        },
+    },
+    "gemma4-small": {
+        "preset": "gemma-4-12b",
+        "description": "Gemma 4 E4B — efficient 4.5B, 256K ctx, multimodal, fits any machine",
+        "size_gb": 2.8,
+        "recommended_ctx": 16384,
+        "temperature": 0.7,
+        "benchmark": {
+            "min_tokens_per_sec": 15,
+            "max_first_token_ms": 1500,
+        },
+    },
+    "code": {
+        "preset": "devstral-small-24b",
+        "description": "Devstral Small 24B — Mistral's 2026 coding flagship",
+        "size_gb": 13.3,
+        "recommended_ctx": 32768,
+        "temperature": 0.3,
+        "benchmark": {
+            "min_tokens_per_sec": 6,
+            "max_first_token_ms": 3500,
         },
     },
 }
