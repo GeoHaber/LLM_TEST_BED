@@ -1,0 +1,64 @@
+{
+  "summary": {
+    "avg_before_ms": 26704.94458002504,
+    "avg_after_ms": 1475.2056600293145,
+    "avg_speedup": 18.102523128534074
+  },
+  "details": [
+    {
+      "task": "Intent Classification",
+      "id": "intent_quant",
+      "before_ms": 23253.753900062293,
+      "before_tokens": 150,
+      "before_tok_s": 6.450571406434218,
+      "after_ms": 1258.7342000333592,
+      "after_out": "Choice=QUANT_LOOKUP",
+      "after_conf": 0.9805493118619921,
+      "speedup": 18.473919195526758
+    },
+    {
+      "task": "Agent Tool Routing",
+      "id": "tool_routing",
+      "before_ms": 26288.86600001715,
+      "before_tokens": 150,
+      "before_tok_s": 5.705837596794861,
+      "after_ms": 1146.4568000519648,
+      "after_out": "Choice=git_blame",
+      "after_conf": 0.6354458840456133,
+      "speedup": 22.930533447771925
+    },
+    {
+      "task": "Security Severity Triage",
+      "id": "bug_severity",
+      "before_ms": 25476.96629993152,
+      "before_tokens": 150,
+      "before_tok_s": 5.887671170660661,
+      "after_ms": 1379.0369000053033,
+      "after_out": "Choice=critical",
+      "after_conf": 0.9024420578029906,
+      "speedup": 18.474463083499465
+    },
+    {
+      "task": "Rubric Code Quality Score",
+      "id": "code_eval",
+      "before_ms": 28812.061100034043,
+      "before_tokens": 150,
+      "before_tok_s": 5.206153057888065,
+      "after_ms": 1283.4239000221714,
+      "after_out": "Score=0.00 (mode=0)",
+      "after_conf": 0.9930924097093909,
+      "speedup": 22.449372416655407
+    },
+    {
+      "task": "Safety Truth Proposition",
+      "id": "safety_noul",
+      "before_ms": 29693.075600080192,
+      "before_tokens": 150,
+      "before_tok_s": 5.05168282397782,
+      "after_ms": 2308.3765000337735,
+      "after_out": "IsTrue=True (p=1.00)",
+      "after_conf": 0.9955571818441026,
+      "speedup": 12.863185706337662
+    }
+  ]
+}

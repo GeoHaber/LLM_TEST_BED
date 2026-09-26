@@ -46,3 +46,29 @@ All 25 GGUF models loaded and ran parallel inference with 0 failures.
 | 25 | 184.1s | 94.9s | 100% |
 
 **Sweet spot:** 12-14 models parallel (fast, no swap thrashing).
+
+---
+
+## Live Update: System 1 (Jev) & Contrastive (CLM) vs. Generative Baseline
+
+**Date:** 2026-09-26  
+**Service:** Local Shared Zena LLM Governor (`http://127.0.0.1:8800`)  
+**Active Model Daemon:** `gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf` (Port 8110)  
+**Host Machine:** AMD Ryzen AI 9 HX 370 (24 cores / threads, 92 GB RAM)  
+
+### Live Head-to-Head Comparison
+
+| # | Task | BEFORE: Generative System 2 (Full Prompt $\to$ JSON) | AFTER: Jev System 1 (Zero-Token Logit Prefill) | Speedup | Output & Confidence |
+| :-: | :--- | :---: | :---: | :---: | :--- |
+| **1** | **Intent Classification** (AAPL Price & P/E) | **23,253.8 ms** (23.3s, 150 tok @ 6.5 tok/s) | **1,258.7 ms** (1.26s, 0 gen tok) | **18.5x** | `Choice=QUANT_LOOKUP` (conf: 0.98) |
+| **2** | **Agent Tool Routing** (Git Memory Leak Bug) | **26,288.9 ms** (26.3s, 150 tok @ 5.7 tok/s) | **1,146.5 ms** (1.15s, 0 gen tok) | **22.9x** | `Choice=git_blame` (conf: 0.64) |
+| **3** | **Security Severity Triage** (Webhook RCE) | **25,477.0 ms** (25.5s, 150 tok @ 5.9 tok/s) | **1,379.0 ms** (1.38s, 0 gen tok) | **18.5x** | `Choice=critical` (conf: 0.90) |
+| **4** | **Rubric Code Quality** (Nested Loops + Leaks) | **28,812.1 ms** (28.8s, 150 tok @ 5.2 tok/s) | **1,283.4 ms** (1.28s, 0 gen tok) | **22.4x** | `Score=0.00 / 4` (mode 0, conf: 0.99) |
+| **5** | **Safety Proposition** (`rm -rf /var/lib/mysql`) | **29,693.1 ms** (29.7s, 150 tok @ 5.1 tok/s) | **2,308.4 ms** (2.31s, 0 gen tok) | **12.9x** | `IsTrue=True` ($p=1.00$, conf: 1.00) |
+
+### Summary Averages
+
+* **BEFORE (Generative System 2):** **26,704.9 ms** (~150 tokens generated at 5.7 tok/s)
+* **AFTER (Jev System 1 Logits):** **1,475.2 ms** (0 generated tokens)
+* **Jev Speedup:** **18.1x faster** (up to **22.9x faster** on tool routing)
+* **AFTER (CLM Contrastive Action Cache):** **0.029 ms (29 µs)** (34,268 ops/sec, **~914,000x faster**)
