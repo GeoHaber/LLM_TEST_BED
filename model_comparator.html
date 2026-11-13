@@ -213,6 +213,9 @@ body { font-family: 'Inter', sans-serif; }
       <button class="nav-tab" data-tab="eval" onclick="switchTab('eval')">
         <span class="material-symbols-outlined mr-1" style="font-size:14px;vertical-align:-2px;">science</span>Eval Studio
       </button>
+      <button class="nav-tab" data-tab="skilllab" onclick="switchTab('skilllab')">
+        <span class="material-symbols-outlined mr-1" style="font-size:14px;vertical-align:-2px;">auto_fix_high</span>Skill Lab
+      </button>
     </nav>
   </div>
   <!-- Right: HW info + theme + lang -->
@@ -1075,6 +1078,168 @@ body { font-family: 'Inter', sans-serif; }
   </div>
 </div>
 
+<!-- ═══════════ SKILL LAB TAB ═══════════ -->
+<div id="tab-skilllab" class="tab-content">
+
+<style>
+  /* ── Card Engine tokens (ZenAIos Display Card system) ── */
+  #tab-skilllab .sl-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; max-width: 1100px; margin: 0 auto; padding: 12px; }
+  #tab-skilllab .sl-col-12 { grid-column: span 12; }
+  #tab-skilllab .sl-col-8  { grid-column: span 8; }
+  #tab-skilllab .sl-col-6  { grid-column: span 6; }
+  #tab-skilllab .sl-col-4  { grid-column: span 4; }
+  #tab-skilllab .sl-col-3  { grid-column: span 3; }
+  @media (max-width: 768px) { #tab-skilllab .sl-col-8, #tab-skilllab .sl-col-6, #tab-skilllab .sl-col-4, #tab-skilllab .sl-col-3 { grid-column: span 12; } }
+
+  #tab-skilllab .card-shell {
+    background: #1a1d27;
+    border: 1px solid #2d3143;
+    border-radius: 10px;
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  #tab-skilllab .card-shell:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  /* Disable hover lift for nested cards (scenarios/evals/log entries) */
+  #tab-skilllab .card-body .card-shell:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  #tab-skilllab .card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #2d3143;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8b8fa3;
+  }
+  #tab-skilllab .card-header .card-icon {
+    font-size: 16px;
+    opacity: 0.8;
+  }
+  #tab-skilllab .card-header .card-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.05);
+    color: #94a3b8;
+  }
+  #tab-skilllab .card-body { padding: 14px; }
+
+  /* Category tints — border-top accent bar (ZenAIos pattern) */
+  #tab-skilllab .tint-action  { border-top: 3px solid #ec4899; }
+  #tab-skilllab .tint-action  .card-header .card-icon { color: #ec4899; }
+  #tab-skilllab .tint-display { border-top: 3px solid #3b82f6; }
+  #tab-skilllab .tint-display .card-header .card-icon { color: #3b82f6; }
+  #tab-skilllab .tint-info    { border-top: 3px solid #06b6d4; }
+  #tab-skilllab .tint-info    .card-header .card-icon { color: #06b6d4; }
+  #tab-skilllab .tint-chart   { border-top: 3px solid #8b5cf6; }
+  #tab-skilllab .tint-chart   .card-header .card-icon { color: #8b5cf6; }
+  #tab-skilllab .tint-status  { border-top: 3px solid #f97316; }
+  #tab-skilllab .tint-status  .card-header .card-icon { color: #f97316; }
+  #tab-skilllab .tint-success { border-top: 3px solid #34d399; }
+  #tab-skilllab .tint-success .card-header .card-icon { color: #34d399; }
+
+  /* KPI card */
+  #tab-skilllab .kpi-value { font-size: 24px; font-weight: 700; line-height: 1.1; margin-top: 4px; }
+  #tab-skilllab .kpi-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Step indicator */
+  #tab-skilllab .sl-steps { display: flex; align-items: center; gap: 6px; padding: 8px 14px; }
+  #tab-skilllab .sl-step-pill { font-size: 11px; color: #5a5e72; padding: 4px 12px; border-radius: 20px; transition: all 0.2s; cursor: default; display: flex; align-items: center; gap: 4px; }
+  #tab-skilllab .sl-step-pill.active { color: #3b82f6; background: rgba(59,130,246,0.12); font-weight: 600; }
+  #tab-skilllab .sl-step-pill.done { color: #22c55e; }
+  #tab-skilllab .sl-step-pill .step-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  #tab-skilllab .sl-step-line { width: 24px; height: 1px; background: #2d3143; }
+
+  /* Upload drop zone */
+  #tab-skilllab .sl-dropzone {
+    border: 2px dashed #2d3143;
+    border-radius: 10px;
+    padding: 32px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #tab-skilllab .sl-dropzone:hover, #tab-skilllab .sl-dropzone.dragover {
+    border-color: #3b82f6;
+    background: rgba(59,130,246,0.04);
+  }
+
+  /* Panel transitions */
+  #tab-skilllab .sl-panel { transition: opacity 0.2s; }
+  #tab-skilllab .sl-panel.hidden { display: none; }
+
+  /* Diff tabs */
+  #tab-skilllab .sl-diff-tab { background: transparent; color: #64748b; border: 1px solid #2d3143; cursor: pointer; font-size: 10px; padding: 3px 10px; border-radius: 6px; transition: all 0.15s; }
+  #tab-skilllab .sl-diff-tab.active { background: rgba(59,130,246,0.12); color: #3b82f6; border-color: #3b82f6; }
+
+  /* Bar chart */
+  #tab-skilllab .sl-bar { transition: height 0.3s ease; border-radius: 3px 3px 0 0; min-height: 3px; }
+
+  /* Example pill */
+  #tab-skilllab .sl-example-btn {
+    font-size: 10px; padding: 4px 10px; border-radius: 8px;
+    background: #1a1d27; border: 1px solid #2d3143;
+    color: #94a3b8; cursor: pointer; transition: all 0.15s;
+  }
+  #tab-skilllab .sl-example-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+
+  /* Form inputs */
+  #tab-skilllab .sl-input {
+    width: 100%; font-size: 11px; background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(45,49,67,0.6); border-radius: 6px;
+    padding: 6px 10px; outline: none; color: #e1e4ed;
+    transition: border-color 0.15s;
+  }
+  #tab-skilllab .sl-input:focus { border-color: #3b82f6; }
+  #tab-skilllab .sl-input::placeholder { color: #5a5e72; }
+  #tab-skilllab textarea.sl-input { resize: vertical; }
+
+  /* Buttons (ZenAIos .card-btn pattern) */
+  #tab-skilllab .sl-btn {
+    font-size: 11px; padding: 6px 16px; border-radius: 8px;
+    cursor: pointer; display: inline-flex; align-items: center;
+    gap: 4px; transition: all 0.15s; border: 1px solid;
+  }
+  #tab-skilllab .sl-btn-primary {
+    background: rgba(59,130,246,0.12); color: #3b82f6;
+    border-color: rgba(59,130,246,0.25);
+  }
+  #tab-skilllab .sl-btn-primary:hover { background: rgba(59,130,246,0.2); }
+  #tab-skilllab .sl-btn-success {
+    background: rgba(34,197,94,0.12); color: #22c55e;
+    border-color: rgba(34,197,94,0.25);
+  }
+  #tab-skilllab .sl-btn-success:hover { background: rgba(34,197,94,0.2); }
+  #tab-skilllab .sl-btn-ghost {
+    background: transparent; color: #8b8fa3;
+    border-color: #2d3143;
+  }
+  #tab-skilllab .sl-btn-ghost:hover { color: #3b82f6; border-color: #3b82f6; }
+  #tab-skilllab .sl-btn-danger {
+    background: rgba(239,68,68,0.08); color: #ef4444;
+    border-color: rgba(239,68,68,0.2);
+  }
+  #tab-skilllab .sl-btn-danger:hover { background: rgba(239,68,68,0.15); }
+  #tab-skilllab .sl-btn-accent {
+    background: rgba(236,72,153,0.08); color: #ec4899;
+    border-color: rgba(236,72,153,0.2);
+  }
+  #tab-skilllab .sl-btn-accent:hover { background: rgba(236,72,153,0.15); }
+
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
+
+<div id="slRoot" class="sl-grid"></div>
+</div>
+
 <!-- Hidden panels for JS compat -->
 <div id="scoutPanel" style="display:none;"></div>
 <div id="matrixPanel" style="display:none;"></div>
@@ -1111,7 +1276,7 @@ async function _evalRefreshPrompts() {
         '<button onclick="_evalLoadPromptVersions(\'' + escHtml(p.name) + '\')" class="text-[11px] text-primary hover:text-primary/80 font-bold">View</button>' +
       '</div>';
     });
-    list.innerHTML = html;
+    list.innerHTML = html;  <!-- xray: ignore[JS-SEC-001] -->
   } catch (e) { toast('Failed to load prompts: ' + e.message, 'error'); }
 }
 
@@ -1135,7 +1300,7 @@ async function _evalLoadPromptVersions(name) {
     if (data.aliases) {
       html += '<div class="mt-2 text-[11px] text-slate-500">Aliases: ' + data.aliases.map(function(a) { return '<span class="text-primary">' + escHtml(a.alias) + '</span> &rarr; v' + escHtml(String(a.version)); }).join(', ') + '</div>';
     }
-    list.innerHTML = html;
+    list.innerHTML = html;  <!-- xray: ignore[JS-SEC-001] -->
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
@@ -1184,7 +1349,7 @@ async function _evalRefreshFeedback() {
     var statsEl = document.getElementById('evalAlignmentStats');
     if (data.stats) {
       var s = data.stats;
-      statsEl.innerHTML = '<div class="grid grid-cols-4 gap-3 text-center">' +
+      statsEl.innerHTML = '<div class="grid grid-cols-4 gap-3 text-center">' +  <!-- xray: ignore[JS-SEC-001] -->
         '<div><div class="text-[10px] text-slate-500 uppercase">Feedback</div><div class="text-lg font-bold text-primary">' + (s.total_feedback || 0) + '</div></div>' +
         '<div><div class="text-[10px] text-slate-500 uppercase">Correlation</div><div class="text-lg font-bold ' + ((s.correlation||0) > 0.7 ? 'text-emerald-400' : 'text-amber-400') + '">' + (s.correlation != null ? s.correlation.toFixed(2) : '---') + '</div></div>' +
         '<div><div class="text-[10px] text-slate-500 uppercase">Avg Bias</div><div class="text-lg font-bold text-slate-300">' + (s.avg_bias != null ? (s.avg_bias > 0 ? '+' : '') + s.avg_bias.toFixed(2) : '---') + '</div></div>' +
@@ -1250,7 +1415,7 @@ async function _evalRefreshGateway() {
         html += '<div><span class="font-bold text-primary">' + escHtml(route) + '</span>: ' + (statsData.stats[route].total_requests || 0) + ' requests</div>';
       }
       html += '</div>';
-      statsEl.innerHTML = html;
+      statsEl.innerHTML = html;  <!-- xray: ignore[JS-SEC-001] -->
     }
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
@@ -1285,6 +1450,713 @@ async function _evalResolve() {
   } catch (e) { document.getElementById('evalResolveResult').textContent = 'Error'; }
 }
 
+// ═══════════ SKILL LAB ═══════════
+var _sl = {
+  sessionId: null,
+  eventSource: null,
+  scoreHistory: [],
+  lastResult: null,
+  step: 'upload',           // current wizard step
+  scenarios: [],            // cached scenario data for re-renders
+  evals: [],                // cached eval data for re-renders
+};
+
+// ── Card Engine (ZenAIos philosophy) ──────────────────────────────
+// Cards are config objects → one renderer builds all DOM.
+// To change any card: edit its config, call slRender().
+
+/**
+ * _createShell(card) — the single card factory (mirrors ZenAIos _createShell).
+ * Every card in Skill Lab goes through this one function.
+ */
+function _slCreateShell(card) {
+  var cat = card.tint || '';
+  var cls = 'card-shell' + (cat ? ' tint-' + cat : '');
+  var html = '<div class="' + cls + '"' +
+    (card.id ? ' data-card-id="' + card.id + '"' : '') +
+    (card.shellStyle ? ' style="' + card.shellStyle + '"' : '') + '>';
+
+  // Header (skip if noHeader)
+  if (!card.noHeader) {
+    html += '<div class="card-header">';
+    if (card.icon) html += '<span class="material-symbols-outlined card-icon">' + card.icon + '</span>';
+    if (card.title) html += '<span>' + card.title + '</span>';
+    if (card.badge) html += card.badge;
+    html += '</div>';
+  }
+
+  // Body
+  html += '<div class="card-body"' + (card.bodyStyle ? ' style="' + card.bodyStyle + '"' : '') + '>';
+  // Content rendered by card.render(card) or card.body string
+  if (typeof card.render === 'function') html += card.render(card);
+  else if (card.body) html += card.body;
+  html += '</div></div>';
+  return html;
+}
+
+/**
+ * SL_CARDS — declarative card configuration for every step.
+ * Same pattern as dashboard-config.json: {id, type, zone, w, ...}
+ * zone = wizard step. w = grid column span. render = content function.
+ * To add/remove/reorder cards: edit this array, done.
+ */
+var SL_CARDS = [
+  // ── Always visible: Header ──
+  { id: 'header', step: '*', w: 12, noHeader: true,
+    render: function() {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;">' +
+        '<div>' +
+        '<h2 style="font-size:16px;font-weight:700;color:#e1e4ed;display:flex;align-items:center;gap:8px;margin:0;">' +
+        '<span class="material-symbols-outlined" style="font-size:20px;color:#3b82f6;">auto_fix_high</span>' +
+        'Self-Improving Skill Lab</h2>' +
+        '<p style="font-size:11px;color:#5a5e72;margin:4px 0 0 0;">Upload a skill, generate test scenarios, optimize with 3 AI agents, export training data</p>' +
+        '</div>' +
+        '<div id="slSessionBadge" class="hidden" style="font-size:10px;color:#5a5e72;font-family:\'Fira Code\',monospace;background:#0f1117;border:1px solid #2d3143;border-radius:8px;padding:4px 10px;"></div>' +
+        '</div>';
+    }
+  },
+  // ── Always visible: Step indicator ──
+  { id: 'steps', step: '*', w: 12, noHeader: true,
+    render: function() {
+      var steps = ['upload','configure','optimize','results'];
+      var html = '<div class="sl-steps" id="slSteps">';
+      for (var i = 0; i < steps.length; i++) {
+        if (i > 0) html += '<div class="sl-step-line"></div>';
+        var s = steps[i];
+        var cls = 'sl-step-pill';
+        var si = steps.indexOf(_sl.step);
+        if (steps.indexOf(s) < si) cls += ' done';
+        else if (s === _sl.step) cls += ' active';
+        html += '<div class="' + cls + '" data-step="' + s + '"><span class="step-dot"></span>' + s.charAt(0).toUpperCase() + s.slice(1) + '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+  },
+
+  // ── Step 1: Upload ──
+  { id: 'upload-zone', step: 'upload', w: 6, tint: 'action', icon: 'upload_file', title: 'Upload Skill',
+    render: function() {
+      return '<div class="sl-dropzone" id="slDropZone"' +
+        ' ondragover="event.preventDefault();this.classList.add(\'dragover\');"' +
+        ' ondragleave="this.classList.remove(\'dragover\');"' +
+        ' ondrop="event.preventDefault();this.classList.remove(\'dragover\');slHandleDrop(event);"' +
+        ' onclick="document.getElementById(\'slFileInput\').click();">' +
+        '<span class="material-symbols-outlined" style="font-size:36px;color:#5a5e72;display:block;margin-bottom:8px;">cloud_upload</span>' +
+        '<div style="font-size:12px;color:#8b8fa3;">Drop a SKILL.md or .zip here</div>' +
+        '<div style="font-size:10px;color:#5a5e72;margin-top:4px;">or click to browse</div>' +
+        '</div>' +
+        '<input type="file" id="slFileInput" style="display:none;" accept=".md,.txt,.zip" onchange="slHandleFileSelect(event)">' +
+        '<div id="slUploadedFiles" class="hidden" style="margin-top:10px;font-size:11px;color:#5a5e72;"></div>';
+    }
+  },
+  { id: 'upload-config', step: 'upload', w: 6, tint: 'info', icon: 'tune', title: 'Configuration',
+    bodyStyle: 'display:flex;flex-direction:column;gap:12px;',
+    render: function() {
+      return '<div>' +
+        '<label style="font-size:10px;color:#5a5e72;font-weight:600;display:block;margin-bottom:6px;">Or load an example:</label>' +
+        '<div id="slExampleList" style="display:flex;flex-wrap:wrap;gap:6px;"><span style="font-size:10px;color:#5a5e72;">Loading...</span></div></div>' +
+        '<div><label style="font-size:10px;color:#5a5e72;font-weight:600;display:block;margin-bottom:4px;">Model for analysis:</label>' +
+        '<select id="slModelSelect" class="sl-input" style="padding:6px 8px;"><option value="">Select a GGUF model...</option></select></div>' +
+        '<div><label style="font-size:10px;color:#5a5e72;font-weight:600;display:block;margin-bottom:4px;">Gemini API key (optional):</label>' +
+        '<input type="password" id="slGeminiKey" placeholder="AIza..." class="sl-input"></div>' +
+        '<button onclick="slAnalyze()" id="slAnalyzeBtn" disabled class="sl-btn sl-btn-primary" style="width:100%;padding:10px;font-size:13px;font-weight:700;justify-content:center;">' +
+        '<span class="material-symbols-outlined" style="font-size:16px;">psychology</span> Analyze Skill</button>';
+    }
+  },
+
+  // ── Step 2: Configure ──
+  { id: 'cfg-scenarios', step: 'configure', w: 6, tint: 'display', icon: 'science', title: 'Test Scenarios',
+    badge: '<span class="card-badge" onclick="slAddScenario()" style="cursor:pointer;color:#3b82f6;">+ Add</span>',
+    render: function() { return '<div id="slScenarios" style="display:flex;flex-direction:column;gap:8px;"></div>'; }
+  },
+  { id: 'cfg-evals', step: 'configure', w: 6, tint: 'info', icon: 'checklist', title: 'Evaluation Criteria',
+    badge: '<span class="card-badge" onclick="slAddEval()" style="cursor:pointer;color:#06b6d4;">+ Add</span>',
+    render: function() { return '<div id="slEvals" style="display:flex;flex-direction:column;gap:8px;"></div>'; }
+  },
+  { id: 'cfg-settings', step: 'configure', w: 12, tint: 'action', noHeader: true,
+    bodyStyle: 'display:flex;align-items:center;gap:16px;',
+    render: function() {
+      return '<div style="display:flex;align-items:center;gap:8px;"><label style="font-size:11px;color:#5a5e72;font-weight:600;">Max Rounds:</label>' +
+        '<input type="number" id="slMaxRounds" value="5" min="1" max="20" class="sl-input" style="width:60px;text-align:center;"></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;"><label style="font-size:11px;color:#5a5e72;font-weight:600;">Patience:</label>' +
+        '<input type="number" id="slPatience" value="3" min="0" max="10" class="sl-input" style="width:60px;text-align:center;" title="Stop after N rounds with no improvement (0=disabled)"></div>' +
+        '<div style="flex:1;"></div>' +
+        '<button onclick="slRegenerateConfig()" class="sl-btn sl-btn-ghost"><span class="material-symbols-outlined" style="font-size:14px;">refresh</span>Regenerate</button>' +
+        '<button onclick="slGoToStep(\'upload\')" class="sl-btn sl-btn-ghost">&larr; Back</button>' +
+        '<button onclick="slStartOptimization()" id="slStartBtn" class="sl-btn sl-btn-success" style="padding:8px 24px;font-size:13px;font-weight:700;">' +
+        '<span class="material-symbols-outlined" style="font-size:16px;">play_arrow</span> Start Optimization</button>';
+    }
+  },
+
+  // ── Step 3: Optimize ──
+  { id: 'opt-score', step: 'optimize', w: 12, tint: 'chart', icon: 'monitoring', title: 'Score Progress',
+    badge: '<span class="card-badge" style="display:flex;align-items:center;gap:4px;">' +
+           '<span id="slRunSpinner" style="display:inline-block;width:8px;height:8px;border:2px solid #8b5cf6;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;"></span> Running</span>' +
+           '<button onclick="slStopOptimization()" class="sl-btn sl-btn-danger" style="margin-left:auto;font-size:10px;padding:3px 10px;">' +
+           '<span class="material-symbols-outlined" style="font-size:12px;vertical-align:-2px;">stop</span> Stop</button>',
+    render: function() { return '<div id="slScoreChart" style="height:80px;display:flex;align-items:flex-end;gap:3px;"></div>'; }
+  },
+  { id: 'opt-log', step: 'optimize', w: 12, tint: 'status', icon: 'timeline', title: 'Round Log',
+    render: function() { return '<div id="slRoundLog" style="display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto;"></div>'; }
+  },
+
+  // ── Step 4: Results ──
+  { id: 'res-baseline', step: 'results', w: 3, tint: 'display', noHeader: true,
+    bodyStyle: 'text-align:center;padding:16px 10px;',
+    render: function() { return '<div class="kpi-label">Baseline</div><div class="kpi-value" id="slResBaseline" style="color:#5a5e72;">-</div>'; }
+  },
+  { id: 'res-final', step: 'results', w: 3, tint: 'success', noHeader: true,
+    bodyStyle: 'text-align:center;padding:16px 10px;',
+    render: function() { return '<div class="kpi-label">Final</div><div class="kpi-value" id="slResFinal" style="color:#22c55e;">-</div>'; }
+  },
+  { id: 'res-kept', step: 'results', w: 3, tint: 'chart', noHeader: true,
+    bodyStyle: 'text-align:center;padding:16px 10px;',
+    render: function() { return '<div class="kpi-label">Kept</div><div class="kpi-value" id="slResKept" style="color:#8b5cf6;">-</div>'; }
+  },
+  { id: 'res-discarded', step: 'results', w: 3, tint: 'status', noHeader: true,
+    bodyStyle: 'text-align:center;padding:16px 10px;',
+    render: function() { return '<div class="kpi-label">Discarded</div><div class="kpi-value" id="slResDiscarded" style="color:#f97316;">-</div>'; }
+  },
+  { id: 'res-chart', step: 'results', w: 8, tint: 'chart', icon: 'bar_chart', title: 'Score History',
+    render: function() { return '<div id="slFinalChart" style="height:80px;display:flex;align-items:flex-end;gap:3px;"></div>'; }
+  },
+  { id: 'res-training', step: 'results', w: 4, tint: 'action', icon: 'model_training', title: 'Training Data',
+    bodyStyle: 'display:flex;flex-direction:column;gap:10px;',
+    render: function() {
+      return '<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:10px;color:#5a5e72;">DPO Pairs</span>' +
+        '<span id="slResDpoPairs" style="font-size:14px;font-weight:700;color:#ec4899;">0</span></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:10px;color:#5a5e72;">SFT Examples</span>' +
+        '<span id="slResSftExamples" style="font-size:14px;font-weight:700;color:#ec4899;">0</span></div>' +
+        '<div style="display:flex;gap:6px;margin-top:4px;">' +
+        '<button onclick="slExportTrainingData(\'dpo\')" class="sl-btn sl-btn-accent" style="flex:1;font-size:10px;padding:6px;">Export DPO</button>' +
+        '<button onclick="slExportTrainingData(\'sft\')" class="sl-btn sl-btn-accent" style="flex:1;font-size:10px;padding:6px;">Export SFT</button></div>';
+    }
+  },
+  { id: 'res-changelog', step: 'results', w: 12, tint: 'info', icon: 'history', title: 'Mutation Changelog',
+    render: function() { return '<div id="slChangelog" style="display:flex;flex-direction:column;gap:6px;"></div>'; }
+  },
+  { id: 'res-diff', step: 'results', w: 12, tint: 'display', icon: 'difference', title: 'Skill Diff',
+    badge: '<div style="margin-left:auto;display:flex;gap:4px;">' +
+           '<button onclick="slShowDiffTab(\'original\')" class="sl-diff-tab active" data-diff="original">Original</button>' +
+           '<button onclick="slShowDiffTab(\'improved\')" class="sl-diff-tab" data-diff="improved">Improved</button></div>',
+    render: function() {
+      return '<div id="slDiffOriginal" style="background:rgba(0,0,0,0.4);border:1px solid #2d3143;border-radius:8px;padding:12px;font-family:\'Fira Code\',monospace;font-size:11px;color:#8b8fa3;white-space:pre-wrap;max-height:300px;overflow-y:auto;"></div>' +
+        '<div id="slDiffImproved" style="display:none;background:rgba(0,0,0,0.4);border:1px solid #2d3143;border-radius:8px;padding:12px;font-family:\'Fira Code\',monospace;font-size:11px;color:#22c55e;white-space:pre-wrap;max-height:300px;overflow-y:auto;"></div>';
+    }
+  },
+  { id: 'res-actions', step: 'results', w: 12, noHeader: true,
+    bodyStyle: 'display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:10px 14px;',
+    render: function() {
+      return '<button onclick="slDownload()" class="sl-btn sl-btn-primary"><span class="material-symbols-outlined" style="font-size:14px;">download</span>Download</button>' +
+        '<button onclick="slReset()" class="sl-btn sl-btn-ghost">New Skill</button>';
+    }
+  },
+];
+
+/**
+ * slRender() — the single render pass (mirrors CardEngine.render()).
+ * Reads SL_CARDS config, filters by current step, builds DOM.
+ * Call this whenever the step changes. That's it.
+ */
+function slRender() {
+  var root = document.getElementById('slRoot');
+  if (!root) return;
+  var step = _sl.step;
+
+  // Filter: always-visible cards (*) + current step
+  var visible = SL_CARDS.filter(function(c) { return c.step === '*' || c.step === step; });
+
+  var html = '';
+  for (var i = 0; i < visible.length; i++) {
+    var card = visible[i];
+    var w = card.w || 12;
+    html += '<div class="sl-col-' + w + '">' + _slCreateShell(card) + '</div>';
+  }
+  root.innerHTML = html;  <!-- xray: ignore[JS-SEC-001] -->
+}
+
+/**
+ * slSubCard — renders nested items (scenarios, evals, log entries).
+ * Same pattern: config in, HTML out.
+ */
+function slSubCard(cfg) {
+  return '<div class="card-shell sl-sub-card" style="border-left:2px solid ' + cfg.color + ';border-radius:6px;">' +
+    '<div style="padding:8px 10px;">' +
+    (cfg.removable ? '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+      '<span style="font-size:10px;font-weight:600;color:#5a5e72;">' + (cfg.label || '') + '</span>' +
+      '<button onclick="this.closest(\'.sl-sub-card\').remove()" style="background:none;border:none;font-size:14px;line-height:1;color:#ef4444;cursor:pointer;">&times;</button>' +
+      '</div>' : '') +
+    cfg.body +
+    '</div></div>';
+}
+
+/** Status pill (KEPT / DISCARD / Baseline) */
+function slPill(text, color) {
+  return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:' +
+    color + '18;color:' + color + ';font-weight:600;">' + text + '</span>';
+}
+
+function slPopulateModelSelect() {
+  var sel = document.getElementById('slModelSelect');
+  if (!sel) return;
+  var val = sel.value;
+  sel.innerHTML = '<option value="">Select a GGUF model...</option>';
+  (scannedModels || []).forEach(function(m, i) {
+    var opt = document.createElement('option');
+    opt.value = m.path;
+    opt.textContent = (m.name || m.path.split(/[\\/]/).pop());
+    sel.appendChild(opt);
+  });
+  if (val) sel.value = val;
+}
+
+function slLoadExamples() {
+  fetch(BACKEND + '/__skill-lab/examples').then(function(r) { return r.json(); }).then(function(data) {
+    var el = document.getElementById('slExampleList');
+    if (!data.examples || data.examples.length === 0) { el.innerHTML = '<span style="font-size:10px;color:#475569;">No examples</span>'; return; }
+    el.innerHTML = data.examples.map(function(ex) {
+      return '<button onclick="slLoadExample(\'' + escHtml(ex.name) + '\')" class="sl-example-btn">' + escHtml(ex.name) + '</button>';
+    }).join('');
+  }).catch(function() {
+    document.getElementById('slExampleList').innerHTML = '<span style="font-size:10px;color:#f87171;">Failed to load</span>';
+  });
+}
+
+async function slLoadExample(name) {
+  try {
+    var res = await fetch(BACKEND + '/__skill-lab/examples/' + encodeURIComponent(name) + '/load', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    _sl.sessionId = data.session_id;
+    document.getElementById('slSessionBadge').classList.remove('hidden');
+    document.getElementById('slSessionBadge').textContent = 'Session: ' + data.session_id.slice(0, 8);
+    document.getElementById('slUploadedFiles').classList.remove('hidden');
+    document.getElementById('slUploadedFiles').innerHTML = '<span style="color:#34d399;">Loaded:</span> ' + (data.files || []).map(function(f) { return escHtml(f); }).join(', ');
+    document.getElementById('slAnalyzeBtn').disabled = false;
+    toast('Loaded example: ' + name, 'success');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function slHandleDrop(event) {
+  var files = event.dataTransfer.files;
+  if (files.length > 0) slProcessFile(files[0]);
+}
+
+function slHandleFileSelect(event) {
+  var files = event.target.files;
+  if (files.length > 0) slProcessFile(files[0]);
+}
+
+async function slProcessFile(file) {
+  if (file.size > 10 * 1024 * 1024) { toast('File too large (max 10MB)', 'error'); return; }
+  try {
+    var body = {};
+    if (file.name.endsWith('.zip')) {
+      var buf = await file.arrayBuffer();
+      var b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+      body = { zip_base64: b64 };
+    } else {
+      var text = await file.text();
+      var name = file.name || 'SKILL.md';
+      body = { files: {} };
+      body.files[name] = text;
+    }
+    var res = await fetch(BACKEND + '/__skill-lab/upload', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    _sl.sessionId = data.session_id;
+    document.getElementById('slSessionBadge').classList.remove('hidden');
+    document.getElementById('slSessionBadge').textContent = 'Session: ' + data.session_id.slice(0, 8);
+    document.getElementById('slUploadedFiles').classList.remove('hidden');
+    document.getElementById('slUploadedFiles').innerHTML = '<span style="color:#34d399;">Uploaded:</span> ' + (data.files || []).map(function(f) { return escHtml(f); }).join(', ');
+    document.getElementById('slAnalyzeBtn').disabled = false;
+    toast('Skill uploaded', 'success');
+  } catch (e) { toast('Upload error: ' + e.message, 'error'); }
+}
+
+async function slAnalyze() {
+  if (!_sl.sessionId) { toast('Upload a skill first', 'warning'); return; }
+  var modelPath = document.getElementById('slModelSelect').value;
+  var geminiKey = document.getElementById('slGeminiKey').value.trim();
+  if (!modelPath && !geminiKey) { toast('Select a model or enter Gemini API key', 'warning'); return; }
+  var btn = document.getElementById('slAnalyzeBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:2px solid #3b82f6;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:-2px;margin-right:6px;"></span>Analyzing...';
+  try {
+    var res = await fetch(BACKEND + '/__skill-lab/analyze', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ session_id: _sl.sessionId, model_path: modelPath, gemini_api_key: geminiKey })
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    _sl.scenarios = data.scenarios || [];
+    _sl.evals = data.evals || [];
+    slGoToStep('configure');
+    toast('Analysis complete - review and edit the config', 'success');
+  } catch (e) {
+    toast('Analysis error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">psychology</span> Analyze Skill';
+  }
+}
+
+function slRenderScenarios(scenarios) {
+  if (scenarios) _sl.scenarios = scenarios;
+  var list = scenarios || _sl.scenarios || [];
+  var el = document.getElementById('slScenarios');
+  if (!el) return;
+  el.innerHTML = list.map(function(s, i) {
+    return '<div class="card-shell" style="border-left:2px solid #3b82f6;border-radius:6px;">' +
+      '<div style="padding:8px 10px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+      '<span style="font-size:10px;font-weight:600;color:#64748b;">Scenario ' + (i + 1) + '</span>' +
+      '<button onclick="this.closest(\'.card-shell\').remove()" style="font-size:12px;color:#f87171;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>' +
+      '</div>' +
+      '<input class="sl-scenario-name sl-input" value="' + escHtml(s.name || '') + '" placeholder="Scenario name" style="margin-bottom:4px;">' +
+      '<textarea class="sl-scenario-input sl-input" rows="2" placeholder="User input / test case">' + escHtml(s.input || '') + '</textarea>' +
+      '</div></div>';
+  }).join('');
+}
+
+function slRenderEvals(evals) {
+  if (evals) _sl.evals = evals;
+  var list = evals || _sl.evals || [];
+  var el = document.getElementById('slEvals');
+  if (!el) return;
+  el.innerHTML = list.map(function(e, i) {
+    return '<div class="card-shell" style="border-left:2px solid #06b6d4;border-radius:6px;">' +
+      '<div style="padding:8px 10px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+      '<span style="font-size:10px;font-weight:600;color:#64748b;">Eval ' + (i + 1) + '</span>' +
+      '<button onclick="this.closest(\'.card-shell\').remove()" style="font-size:12px;color:#f87171;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>' +
+      '</div>' +
+      '<input class="sl-eval-name sl-input" value="' + escHtml(e.name || '') + '" placeholder="Eval name" style="margin-bottom:4px;">' +
+      '<textarea class="sl-eval-criteria sl-input" rows="2" placeholder="Pass criteria">' + escHtml(e.criteria || '') + '</textarea>' +
+      '</div></div>';
+  }).join('');
+}
+
+function slAddScenario() {
+  var el = document.getElementById('slScenarios');
+  el.insertAdjacentHTML('beforeend',
+    '<div class="card-shell" style="border-left:2px solid #3b82f6;border-radius:6px;">' +
+    '<div style="padding:8px 10px;">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+    '<span style="font-size:10px;font-weight:600;color:#64748b;">New Scenario</span>' +
+    '<button onclick="this.closest(\'.card-shell\').remove()" style="font-size:12px;color:#f87171;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>' +
+    '</div>' +
+    '<input class="sl-scenario-name sl-input" placeholder="Scenario name" style="margin-bottom:4px;">' +
+    '<textarea class="sl-scenario-input sl-input" rows="2" placeholder="User input / test case"></textarea>' +
+    '</div></div>'
+  );
+}
+
+function slAddEval() {
+  var el = document.getElementById('slEvals');
+  el.insertAdjacentHTML('beforeend',
+    '<div class="card-shell" style="border-left:2px solid #06b6d4;border-radius:6px;">' +
+    '<div style="padding:8px 10px;">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+    '<span style="font-size:10px;font-weight:600;color:#64748b;">New Eval</span>' +
+    '<button onclick="this.closest(\'.card-shell\').remove()" style="font-size:12px;color:#f87171;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>' +
+    '</div>' +
+    '<input class="sl-eval-name sl-input" placeholder="Eval name" style="margin-bottom:4px;">' +
+    '<textarea class="sl-eval-criteria sl-input" rows="2" placeholder="Pass criteria"></textarea>' +
+    '</div></div>'
+  );
+}
+
+function slCollectConfig() {
+  var scenarios = [];
+  document.querySelectorAll('#slScenarios > div').forEach(function(div) {
+    scenarios.push({
+      name: (div.querySelector('.sl-scenario-name') || {}).value || '',
+      input: (div.querySelector('.sl-scenario-input') || {}).value || '',
+    });
+  });
+  var evals = [];
+  document.querySelectorAll('#slEvals > div').forEach(function(div) {
+    evals.push({
+      name: (div.querySelector('.sl-eval-name') || {}).value || '',
+      criteria: (div.querySelector('.sl-eval-criteria') || {}).value || '',
+    });
+  });
+  return { scenarios: scenarios, evals: evals };
+}
+
+async function slRegenerateConfig() {
+  if (!_sl.sessionId) return;
+  toast('Regenerating...', 'info');
+  try {
+    var modelPath = document.getElementById('slModelSelect').value;
+    var geminiKey = document.getElementById('slGeminiKey').value.trim();
+    var res = await fetch(BACKEND + '/__skill-lab/analyze', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ session_id: _sl.sessionId, model_path: modelPath, gemini_api_key: geminiKey })
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    slRenderScenarios(data.scenarios || []);
+    slRenderEvals(data.evals || []);
+    toast('Config regenerated', 'success');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function slStartOptimization() {
+  if (!_sl.sessionId) return;
+  var config = slCollectConfig();
+  if (config.scenarios.length === 0) { toast('Add at least one scenario', 'warning'); return; }
+  if (config.evals.length === 0) { toast('Add at least one eval', 'warning'); return; }
+
+  await fetch(BACKEND + '/__skill-lab/update-config', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ session_id: _sl.sessionId, scenarios: config.scenarios, evals: config.evals })
+  });
+
+  var maxRounds = parseInt(document.getElementById('slMaxRounds').value) || 5;
+  var patience = parseInt((document.getElementById('slPatience') || {}).value) || 0;
+  var modelPath = document.getElementById('slModelSelect').value;
+  var geminiKey = document.getElementById('slGeminiKey').value.trim();
+
+  try {
+    var res = await fetch(BACKEND + '/__skill-lab/start/' + _sl.sessionId, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ model_path: modelPath, gemini_api_key: geminiKey, max_rounds: maxRounds, patience: patience })
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+
+    _sl.scoreHistory = [];
+    _sl.lastResult = null;
+    document.getElementById('slRoundLog').innerHTML = '';
+    document.getElementById('slScoreChart').innerHTML = '';
+    slGoToStep('optimize');
+    slStartSSE();
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function slStartSSE() {
+  if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+  var url = BACKEND + '/__skill-lab/stream/' + _sl.sessionId;
+  _sl.eventSource = new EventSource(url);
+  _sl.eventSource.onmessage = function(e) {
+    try {
+      var event = JSON.parse(e.data);
+      slHandleSSE(event);
+    } catch (err) { /* ignore parse errors */ }
+  };
+  _sl.eventSource.onerror = function() {
+    _sl.eventSource.close();
+    _sl.eventSource = null;
+  };
+}
+
+function slHandleSSE(event) {
+  var logEl = document.getElementById('slRoundLog');
+  switch (event.type) {
+    case 'baseline':
+      var score = (event.data.score || 0);
+      _sl.scoreHistory.push(score);
+      slRenderScoreChart('slScoreChart');
+      logEl.insertAdjacentHTML('beforeend',
+        '<div class="card-shell" style="border-left:2px solid #64748b;border-radius:6px;">' +
+        '<div style="padding:8px 12px;display:flex;align-items:center;gap:10px;">' +
+        '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(100,116,139,0.15);color:#94a3b8;">Baseline</span>' +
+        '<span style="font-size:14px;font-weight:700;color:#e2e8f0;">' + score.toFixed(1) + '%</span>' +
+        '</div></div>'
+      );
+      break;
+
+    case 'experiment_result':
+      var d = event.data;
+      var kept = d.status === 'kept';
+      var tintColor = kept ? '#34d399' : '#f97316';
+      _sl.scoreHistory.push(kept ? d.score_after : (d.score_before || _sl.scoreHistory[_sl.scoreHistory.length - 1] || 0));
+      slRenderScoreChart('slScoreChart');
+      logEl.insertAdjacentHTML('beforeend',
+        '<div class="card-shell" style="border-left:2px solid ' + tintColor + ';border-radius:6px;">' +
+        '<div style="padding:8px 12px;">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+        '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:' + (kept ? 'rgba(52,211,153,0.12)' : 'rgba(247,115,22,0.12)') + ';color:' + tintColor + ';font-weight:600;">' + (kept ? 'KEPT' : 'DISCARD') + '</span>' +
+        '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(139,92,246,0.1);color:#8b5cf6;">' + escHtml(d.strategy_type || '') + '</span>' +
+        '<span style="font-size:12px;font-weight:600;color:' + tintColor + ';margin-left:auto;">' + (d.score_before || 0).toFixed(1) + '% &rarr; ' + (d.score_after || 0).toFixed(1) + '%</span>' +
+        '</div>' +
+        (d.description ? '<div style="font-size:11px;color:#94a3b8;">' + escHtml(d.description) + '</div>' : '') +
+        '</div></div>'
+      );
+      logEl.scrollTop = logEl.scrollHeight;
+      break;
+
+    case 'complete':
+      if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+      var spinner = document.getElementById('slRunSpinner');
+      if (spinner) spinner.style.display = 'none';
+      slShowResults(event.data);
+      break;
+
+    case 'error':
+      if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+      var spinner = document.getElementById('slRunSpinner');
+      if (spinner) spinner.style.display = 'none';
+      toast('Optimization error: ' + (event.data.message || 'Unknown'), 'error');
+      break;
+  }
+}
+
+function slRenderScoreChart(containerId) {
+  var el = document.getElementById(containerId);
+  if (!el || _sl.scoreHistory.length === 0) return;
+  var maxScore = 100;
+  el.innerHTML = _sl.scoreHistory.map(function(s, i) {  <!-- xray: ignore[JS-SEC-001] -->
+    var pct = Math.max(4, (s / maxScore) * 100);
+    var color = i === 0 ? '#64748b' : (s >= _sl.scoreHistory[0] ? '#34d399' : '#f97316');
+    return '<div style="flex:1;max-width:36px;display:flex;flex-direction:column;align-items:center;">' +
+      '<div style="font-size:8px;color:#475569;margin-bottom:3px;">' + s.toFixed(0) + '</div>' +
+      '<div class="sl-bar" style="width:100%;height:' + pct + '%;background:' + color + ';"></div>' +
+      '</div>';
+  }).join('');
+}
+
+function slShowResults(data) {
+  var fr = data || {};
+  _sl.lastResult = fr;
+
+  // Render the results step DOM first, then populate
+  _sl.step = 'results';
+  slRender();
+
+  document.getElementById('slResBaseline').textContent = (fr.baseline_score || 0).toFixed(1) + '%';
+  document.getElementById('slResFinal').textContent = (fr.final_score || 0).toFixed(1) + '%';
+
+  var ml = fr.mutation_log || [];
+  document.getElementById('slResKept').textContent = ml.filter(function(m) { return m.kept; }).length;
+  document.getElementById('slResDiscarded').textContent = ml.filter(function(m) { return !m.kept; }).length;
+
+  // Training data counts
+  document.getElementById('slResDpoPairs').textContent = (fr.dpo_pairs || []).length;
+  document.getElementById('slResSftExamples').textContent = (fr.sft_examples || []).length;
+
+  // Score chart
+  _sl.scoreHistory = fr.score_history || _sl.scoreHistory;
+  slRenderScoreChart('slFinalChart');
+
+  // Changelog
+  var clEl = document.getElementById('slChangelog');
+  clEl.innerHTML = ml.map(function(m, i) {
+    var kept = m.kept;
+    var tintColor = kept ? '#34d399' : '#f97316';
+    return '<div class="card-shell" style="border-left:2px solid ' + tintColor + ';border-radius:6px;">' +
+      '<div style="padding:8px 12px;">' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+      '<span style="font-size:10px;font-weight:700;color:#475569;">R' + (i + 1) + '</span>' +
+      '<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:' + (kept ? 'rgba(52,211,153,0.12)' : 'rgba(247,115,22,0.12)') + ';color:' + tintColor + ';">' + (kept ? 'KEPT' : 'DISCARD') + '</span>' +
+      '<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(139,92,246,0.1);color:#8b5cf6;">' + escHtml(m.strategy_type || '') + '</span>' +
+      '<span style="font-size:11px;color:#e2e8f0;flex:1;">' + escHtml(m.description || '') + '</span>' +
+      '<span style="font-size:10px;color:#64748b;">' + (m.score_before || 0).toFixed(1) + '% &rarr; ' + (m.score_after || 0).toFixed(1) + '%</span>' +
+      '</div>' +
+      (m.diagnosis ? '<div style="font-size:10px;color:#64748b;margin-top:4px;">' + escHtml(m.diagnosis) + '</div>' : '') +
+      '</div></div>';
+  }).join('');
+
+  // Diff view
+  document.getElementById('slDiffOriginal').textContent = fr.original_skill_content || '(not available)';
+  document.getElementById('slDiffImproved').textContent = fr.improved_skill_content || '(not available)';
+}
+
+function slShowDiffTab(which) {
+  document.querySelectorAll('.sl-diff-tab').forEach(function(b) { b.classList.remove('active'); });
+  document.querySelector('.sl-diff-tab[data-diff="' + which + '"]').classList.add('active');
+  document.getElementById('slDiffOriginal').style.display = which === 'original' ? '' : 'none';
+  document.getElementById('slDiffImproved').style.display = which === 'improved' ? '' : 'none';
+}
+
+async function slExportTrainingData(type) {
+  if (!_sl.lastResult) { toast('No results to export', 'warning'); return; }
+  var data = type === 'dpo' ? (_sl.lastResult.dpo_pairs || []) : (_sl.lastResult.sft_examples || []);
+  if (data.length === 0) { toast('No ' + type.toUpperCase() + ' data collected', 'warning'); return; }
+  var jsonl = data.map(function(d) { return JSON.stringify(d); }).join('\n');
+  var blob = new Blob([jsonl], { type: 'application/jsonl' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = type + '_training_data.jsonl';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Exported ' + data.length + ' ' + type.toUpperCase() + ' examples', 'success');
+}
+
+async function slStopOptimization() {
+  if (!_sl.sessionId) return;
+  try {
+    await fetch(BACKEND + '/__skill-lab/stop/' + _sl.sessionId, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+    var spinner = document.getElementById('slRunSpinner');
+    if (spinner) spinner.style.display = 'none';
+    toast('Optimization stopped', 'warning');
+    var res = await fetch(BACKEND + '/__skill-lab/status/' + _sl.sessionId);
+    var data = await res.json();
+    if (data.final_result) slShowResults(data.final_result);
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function slDownload() {
+  if (!_sl.sessionId) return;
+  try {
+    var res = await fetch(BACKEND + '/__skill-lab/download/' + _sl.sessionId);
+    if (!res.ok) { toast('Download failed', 'error'); return; }
+    var blob = await res.blob();
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = 'improved_skill.zip'; a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function slGoToStep(step) {
+  _sl.step = step;
+  slRender();
+  // After render, populate dynamic content for specific steps
+  if (step === 'configure') {
+    slRenderScenarios();
+    slRenderEvals();
+  } else if (step === 'optimize') {
+    slRenderScoreChart('slScoreChart');
+  }
+}
+
+function slReset() {
+  _sl.sessionId = null;
+  _sl.scoreHistory = [];
+  _sl.lastResult = null;
+  _sl.scenarios = [];
+  _sl.evals = [];
+  if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+  _sl.step = 'upload';
+  slRender();
+  slPopulateModelSelect();
+  slLoadExamples();
+}
+
+// Auto-init Skill Lab on tab switch
+var _slInitDone = false;
+var _origSwitchTab = switchTab;
+switchTab = function(tabId) {
+  _origSwitchTab(tabId);
+  if (tabId === 'skilllab' && !_slInitDone) {
+    _slInitDone = true;
+    slRender();
+    slPopulateModelSelect();
+    slLoadExamples();
+  }
+};
+
 // ── Eval Studio: Conversation Judges ──
 async function _evalJudgeConversation() {
   var judge = document.getElementById('evalConvJudge').value;
@@ -1302,7 +2174,7 @@ async function _evalJudgeConversation() {
     if (data.ok) {
       var r = data.result;
       var color = r.passed ? 'text-emerald-400' : 'text-red-400';
-      resultEl.innerHTML = '<span class="' + color + ' font-bold">' + (r.passed ? 'PASS' : 'FAIL') + '</span> &mdash; Score: <span class="font-bold text-primary">' + r.score.toFixed(3) + '</span>';
+      resultEl.innerHTML = '<span class="' + color + ' font-bold">' + (r.passed ? 'PASS' : 'FAIL') + '</span> &mdash; Score: <span class="font-bold text-primary">' + r.score.toFixed(3) + '</span>';  <!-- xray: ignore[JS-SEC-001] -->
       detailEl.textContent = JSON.stringify(r.details, null, 2);
       detailEl.classList.remove('hidden');
     } else {

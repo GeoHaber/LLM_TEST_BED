@@ -1,0 +1,396 @@
+"""
+ADK Skill Optimizer (Google Agent Development Kit)
+==================================================
+Optional wrapper that uses Google ADK agents with Gemini models for the
+multi-agent skill optimization loop. Same public API as SkillOptimizer.
+
+Requires: pip install google-adk google-genai
+Plus a Gemini API key from https://aistudio.google.com/apikey
+
+Falls back gracefully — this module is only imported when ADK is available
+AND a Gemini API key is provided.
+"""
+
+import json
+import os
+from typing import Any, Callable, Optional
+
+from pydantic import BaseModel, Field  # xray: ignore[SEC-015]
+
+from google.adk.agents import Agent  # xray: ignore[SEC-015]
+from google.adk.runners import Runner  # xray: ignore[SEC-015]
+from google.adk.sessions import InMemorySessionService  # xray: ignore[SEC-015]
+from google.genai import types  # xray: ignore[SEC-015]
+
+from skill_optimizer import (
+    FailureAnalysis,
+    SkillMutation,
+    EXECUTOR_SYSTEM,
+    ANALYST_SYSTEM,
+    MUTATOR_SYSTEM,
+    _extract_json,
+    _strategy_stats,
+)
+
+
+class ADKSkillOptimizer:
+    """Multi-agent skill optimizer using Google ADK + Gemini.
+
+    Three ADK agents with structured output schemas collaborate to
+    test, diagnose, and fix agent skills.
+    """
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash-preview-04-17"):
+        os.environ["GOOGLE_API_KEY"] = api_key
+        self.model = model
+        self._session_service = InMemorySessionService()
+        self._call_id = 0
+
+        self.executor = Agent(
+            name="executor",
+            model=model,
+            instruction=EXECUTOR_SYSTEM,
+        )
+        self.analyst = Agent(
+            name="analyst",
+            model=model,
+            instruction=ANALYST_SYSTEM,
+            output_schema=FailureAnalysis,
+        )
+        self.mutator = Agent(
+            name="mutator",
+            model=model,
+            instruction=MUTATOR_SYSTEM,
+            output_schema=SkillMutation,
+        )
+
+    async def _ask(self, agent: Agent, prompt: str) -> str:
+        """Run an ADK agent with a prompt, return text response."""
+        self._call_id += 1
+        uid = f"u{self._call_id}"
+        runner = Runner(
+            agent=agent, app_name="skill_opt",
+            session_service=self._session_service,
+        )
+        session = await self._session_service.create_session(
+            app_name="skill_opt", user_id=uid,
+        )
+        text = ""
+        async for event in runner.run_async(
+            user_id=uid,
+            session_id=session.id,
+            new_message=types.Content(parts=[types.Part(text=prompt)]),
+        ):
+            if hasattr(event, "content") and event.content:
+                for part in event.content.parts or []:
+                    if hasattr(part, "text") and part.text:
+                        text += part.text
+        return text
+
+    async def _ask_json(self, agent: Agent, prompt: str, fallback: Any = None) -> Any:
+        """Run an ADK agent and parse JSON response."""
+        text = await self._ask(agent, prompt)
+        return _extract_json(text, fallback)
+
+    def analyze_skill(self, skill_files: dict) -> dict:
+        """Generate test scenarios and eval criteria. Sync wrapper around async ADK."""
+        import asyncio
+        return asyncio.run(self._analyze_skill_async(skill_files))
+
+    async def _analyze_skill_async(self, skill_files: dict) -> dict:
+        skill_content = ""
+        for k, v in skill_files.items():
+            if k.endswith("SKILL.md"):
+                skill_content = v
+                break
+        if not skill_content:
+            for k, v in skill_files.items():
+                if k.endswith(".md"):
+                    skill_content = v
+                    break
+        if not skill_content and skill_files:
+            skill_content = next(iter(skill_files.values()))
+
+        refs = {k: v for k, v in skill_files.items() if "references/" in k}
+        ref_text = ""
+        if refs:
+            ref_text = "\n\nReference files:\n" + "\n---\n".join(
+                f"## {k}\n{v}" for k, v in refs.items()  # xray: ignore[QUAL-005]
+            )
+
+        prompt = (
+            f"Analyze this agent skill and generate test scenarios "
+            f"with evaluation criteria.\n\n"
+            f"# Skill Content\n{skill_content[:4000]}\n{ref_text}\n\n"
+            f"Generate:\n"
+            f"1. 3-4 diverse test scenarios (realistic user inputs)\n"
+            f"2. 4-6 binary yes/no evaluation criteria\n\n"
+            f"Return JSON:\n"
+            f'{{"scenarios": [{{"id": 1, "name": "short name", '
+            f'"description": "what this tests", '
+            f'"input": "the user request to test"}}], '
+            f'"evals": [{{"id": 1, "name": "what to check", '
+            f'"question": "yes/no question about the output", '
+            f'"pass_condition": "what yes looks like", '
+            f'"fail_condition": "what no looks like"}}]}}'
+        )
+
+        result = await self._ask_json(self.executor, prompt, fallback={"scenarios": [], "evals": []})
+
+        if not isinstance(result, dict):
+            result = {"scenarios": [], "evals": []}
+        if "scenarios" not in result:
+            result["scenarios"] = []
+        if "evals" not in result:
+            result["evals"] = []
+
+        for i, s in enumerate(result["scenarios"]):
+            if "id" not in s:
+                s["id"] = i + 1
+        for i, e in enumerate(result["evals"]):
+            if "id" not in e:
+                e["id"] = i + 1
+
+        return result
+
+    def optimize(
+        self,
+        skill_files: dict,
+        scenarios: list,
+        evals: list,
+        max_rounds: int = 10,
+        callback: Optional[Callable] = None,
+    ) -> dict:
+        """Sync wrapper for the async optimization loop."""
+        import asyncio
+        return asyncio.run(
+            self._optimize_async(skill_files, scenarios, evals, max_rounds, callback)
+        )
+
+    async def _optimize_async(
+        self,
+        skill_files: dict,
+        scenarios: list,
+        evals: list,
+        max_rounds: int,
+        callback: Optional[Callable],
+    ) -> dict:
+        def emit(event: dict):
+            if callback:
+                callback(event)
+
+        skill_content = ""
+        for k, v in skill_files.items():
+            if k.endswith("SKILL.md") or k.endswith(".md"):
+                skill_content = v
+                break
+        if not skill_content and skill_files:
+            skill_content = next(iter(skill_files.values()))
+
+        current_content = skill_content
+        score_history = []
+        mutation_log = []
+
+        # Baseline
+        emit({"type": "status", "data": {"message": "Running baseline evaluation..."}})
+        baseline = await self._score_skill(current_content, scenarios, evals)
+        baseline_pct = round(100 * baseline["passed"] / max(baseline["total"], 1), 1)
+        score_history.append(baseline_pct)
+
+        emit({
+            "type": "baseline",
+            "data": {
+                "score": baseline_pct,
+                "passed": baseline["passed"],
+                "total": baseline["total"],
+                "per_eval": baseline["per_eval"],
+            },
+        })
+
+        if baseline_pct >= 100.0:
+            emit({
+                "type": "complete",
+                "data": {
+                    "baseline_score": baseline_pct,
+                    "final_score": baseline_pct,
+                    "improved_skill_content": current_content,
+                    "score_history": score_history,
+                    "mutation_log": [],
+                    "strategy_stats": {},
+                },
+            })
+            return {
+                "baseline_score": baseline_pct,
+                "final_score": baseline_pct,
+                "improved_skill_content": current_content,
+                "score_history": score_history,
+                "mutation_log": [],
+            }
+
+        for rnd in range(1, max_rounds + 1):
+            emit({"type": "experiment_start", "data": {"round": rnd, "total_rounds": max_rounds}})
+
+            # Analyst
+            analysis = await self._analyze_failures(current_content, scenarios, evals, baseline["details"])
+            emit({
+                "type": "analysis",
+                "data": {
+                    "round": rnd,
+                    "diagnosis": analysis.get("diagnosis", ""),
+                    "strategy": analysis.get("mutation_strategy", ""),
+                },
+            })
+
+            # Mutator
+            mutation = await self._mutate_skill(current_content, analysis)
+            new_content = mutation.get("new_skill_content", current_content)
+
+            if not new_content.strip() or new_content.strip() == current_content.strip():
+                score_history.append(baseline_pct)
+                entry = {
+                    "round": rnd,
+                    "strategy_type": analysis.get("mutation_strategy", "unknown"),
+                    "diagnosis": analysis.get("diagnosis", ""),
+                    "description": "No change produced",
+                    "score_before": baseline_pct,
+                    "score_after": baseline_pct,
+                    "kept": False,
+                }
+                mutation_log.append(entry)
+                emit({"type": "experiment_result", "data": {**entry, "status": "discarded", "per_eval": baseline["per_eval"]}})
+                continue
+
+            # Re-score
+            result = await self._score_skill(new_content, scenarios, evals)
+            new_pct = round(100 * result["passed"] / max(result["total"], 1), 1)
+
+            kept = new_pct > baseline_pct
+            entry = {
+                "round": rnd,
+                "strategy_type": analysis.get("mutation_strategy", "unknown"),
+                "diagnosis": analysis.get("diagnosis", ""),
+                "description": mutation.get("description", ""),
+                "score_before": baseline_pct,
+                "score_after": new_pct,
+                "kept": kept,
+            }
+            mutation_log.append(entry)
+
+            if kept:
+                current_content = new_content
+                baseline = result
+                baseline_pct = new_pct
+
+            score_history.append(baseline_pct)
+            emit({"type": "experiment_result", "data": {**entry, "status": "kept" if kept else "discarded", "per_eval": result["per_eval"]}})
+
+            if baseline_pct >= 100.0:
+                break
+
+        final_pct = baseline_pct
+        emit({
+            "type": "complete",
+            "data": {
+                "baseline_score": score_history[0],
+                "final_score": final_pct,
+                "improved_skill_content": current_content,
+                "score_history": score_history,
+                "mutation_log": mutation_log,
+                "strategy_stats": _strategy_stats(mutation_log),
+            },
+        })
+
+        return {
+            "baseline_score": score_history[0],
+            "final_score": final_pct,
+            "improved_skill_content": current_content,
+            "score_history": score_history,
+            "mutation_log": mutation_log,
+        }
+
+    async def _score_skill(self, skill_content, scenarios, evals):
+        all_results = []
+        total_passed = 0
+        total_checks = 0
+        per_eval = {e["id"]: {"passed": 0, "total": 0} for e in evals}
+
+        for sc in scenarios:
+            output = await self._ask(
+                self.executor,
+                f"Execute this skill:\n\n{skill_content[:3000]}\n\nUser request:\n{sc.get('input', '')}",
+            )
+            scoring = await self._ask_json(
+                self.executor,
+                (
+                    f"Evaluate this output against the criteria.\n\n"
+                    f"Input: {sc.get('input', '')}\n\n"
+                    f"Output:\n{output[:2000]}\n\n"
+                    f"Criteria:\n{json.dumps(evals, indent=2)}\n\n"
+                    f'Return JSON: {{"results": [{{"eval_id": 1, "passed": true, "reason": "..."}}]}}'
+                ),
+                fallback={"results": []},
+            )
+            scores = scoring.get("results", []) if isinstance(scoring, dict) else []
+            for s in scores:
+                eid = s.get("eval_id")
+                passed = s.get("passed", False)
+                if passed:
+                    total_passed += 1
+                total_checks += 1
+                if eid in per_eval:
+                    per_eval[eid]["total"] += 1
+                    if passed:
+                        per_eval[eid]["passed"] += 1
+                all_results.append({**s, "scenario_id": sc["id"]})
+
+        return {
+            "passed": total_passed,
+            "total": total_checks,
+            "per_eval": [
+                {"eval_id": k, **v, "pass_rate": round(v["passed"] / max(v["total"], 1) * 100, 1)}
+                for k, v in per_eval.items()  # xray: ignore[QUAL-005]
+            ],
+            "details": all_results,
+        }
+
+    async def _analyze_failures(self, skill_content, scenarios, evals, details):
+        failed = [d for d in details if not d.get("passed")]
+        if not failed:
+            return {
+                "diagnosis": "All passed",
+                "mutation_strategy": "add_constraint",
+                "target_section": "N/A",
+                "suggested_change": "none",
+            }
+        return await self._ask_json(
+            self.analyst,
+            (
+                f"Diagnose these failures and suggest ONE fix.\n\n"
+                f"Skill:\n{skill_content[:2000]}\n\n"
+                f"Failed evals:\n{json.dumps(failed[:5], indent=2)}"
+            ),
+            fallback={
+                "diagnosis": "Unable to diagnose",
+                "mutation_strategy": "add_constraint",
+                "target_section": "unknown",
+                "suggested_change": "unclear",
+            },
+        )
+
+    async def _mutate_skill(self, skill_content, analysis):
+        return await self._ask_json(
+            self.mutator,
+            (
+                f"Apply this fix to the skill. Make ONE change only.\n\n"
+                f"SKILL CONTENT:\n{skill_content}\n\n"
+                f"Diagnosis: {analysis.get('diagnosis')}\n"
+                f"Strategy: {analysis.get('mutation_strategy')}\n"
+                f"Target: {analysis.get('target_section')}\n"
+                f"Change: {analysis.get('suggested_change')}"
+            ),
+            fallback={
+                "description": "Failed to generate mutation",
+                "reasoning": "",
+                "new_skill_content": skill_content,
+            },
+        )

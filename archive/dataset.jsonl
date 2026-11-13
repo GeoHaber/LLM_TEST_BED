@@ -1,0 +1,3 @@
+{"conversations": [{"from": "human", "value": "Is this a dry run test?"}, {"from": "gpt", "value": "Yes, I am verifying the ZEN_Forge pipeline."}]}
+{"text": "This is a purely arbitrary test string to ensure the formatting module accepts Alpaca format."}
+{"conversations": [{"from": "human", "value": "What happens if a disk fails?"}, {"from": "gpt", "value": "Atomic saving will prevent corruption."}]}

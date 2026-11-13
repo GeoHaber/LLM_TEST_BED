@@ -49,3 +49,10 @@ _patch*.py
 test_download_temp/
 model_comparator_legacy.html
 model_comparator_old.html
+
+# Runtime databases and caches
+zeneval.db
+zen_results.db
+benchmark_results.json
+.gguf_meta_cache.json
+.llama_cpu_fingerprint.json

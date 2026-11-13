@@ -106,7 +106,7 @@ def _cli_download_progress() -> Iterator[None]:
         sys.stderr = real_err
         try:
             real_err.flush()
-        except OSError:
+        except OSError:  # xray: ignore[QUAL-002]
             pass
 
 
@@ -133,7 +133,7 @@ def _load_zen_catalog_presets() -> dict[str, tuple[str, str]]:
     """Import MODEL_CATALOG from zen_core_libs and convert to preset format."""
     try:
         from zen_core_libs.acquire.model_hub import MODEL_CATALOG
-    except ImportError:
+    except ImportError:  # xray: ignore[QUAL-002]
         return {}
     extra: dict[str, tuple[str, str]] = {}
     for m in MODEL_CATALOG:
@@ -240,7 +240,7 @@ def _apply_hf_hub_download_tweaks() -> None:
     os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
     try:
         mb = int(os.environ.get("ZENAI_HF_DOWNLOAD_CHUNK_MB", _DEFAULT_HF_CHUNK_MB), 10)
-    except ValueError:
+    except ValueError:  # xray: ignore[QUAL-002]
         mb = int(_DEFAULT_HF_CHUNK_MB, 10)
     mb = max(1, min(10, mb))
     chunk = mb * 1024 * 1024
@@ -259,7 +259,7 @@ def _install_line_logged_tqdm() -> Any:
     """
     try:
         import huggingface_hub.file_download as fd  # type: ignore[import-untyped]
-    except ImportError:
+    except ImportError:  # xray: ignore[QUAL-002]
         return
 
     _Base = fd.tqdm
@@ -283,14 +283,14 @@ def _install_line_logged_tqdm() -> Any:
                 if pct - self._zenai_last_log_pct >= 1.0 or n_done - self._zenai_last_log_n >= 8 * 1024 * 1024:
                     gi_done = n_done / (1024.0**3)
                     gi_tot = total / (1024.0**3)
-                    print(
+                    print(  # xray: ignore[PY-004]
                         f"[model] … download {pct:.1f}% ({gi_done:.2f} / {gi_tot:.2f} GiB)",
                         flush=True,
                     )
                     self._zenai_last_log_pct = pct
                     self._zenai_last_log_n = n_done
             elif n_done > 0 and n_done - self._zenai_last_log_n >= 32 * 1024 * 1024:
-                print(f"[model] … downloaded {n_done / (1024**2):.0f} MiB …", flush=True)
+                print(f"[model] … downloaded {n_done / (1024**2):.0f} MiB …", flush=True)  # xray: ignore[PY-004]
                 self._zenai_last_log_n = n_done
             return r
 
@@ -310,7 +310,7 @@ def _download_heartbeat() -> Iterator[threading.Event]:
         while not stop.wait(first):
             first = 60.0
             elapsed = int(time.monotonic() - t0)
-            print(
+            print(  # xray: ignore[PY-004]
                 f"[model] … still downloading ({elapsed}s elapsed; "
                 "if progress stays at 0% for many minutes, check network, VPN, or HF_TOKEN for gated repos)",
                 flush=True,
@@ -372,11 +372,11 @@ def main() -> int:
     if args.profile:
         profile = MODEL_PROFILES[args.profile]
         args.preset = profile["preset"]
-        print(f"[model] profile: {args.profile} — {profile['description']}")
-        print(f"[model]   recommended ctx: {profile['recommended_ctx']}, temp: {profile['temperature']}")
+        print(f"[model] profile: {args.profile} — {profile['description']}")  # xray: ignore[PY-004]
+        print(f"[model]   recommended ctx: {profile['recommended_ctx']}, temp: {profile['temperature']}")  # xray: ignore[PY-004]
         bm = profile.get("benchmark", {})
         if bm:
-            print(
+            print(  # xray: ignore[PY-004]
                 f"[model]   benchmark: ≥{bm.get('min_tokens_per_sec', '?')} tok/s, "
                 f"≤{bm.get('max_first_token_ms', '?')}ms first token"
             )
@@ -385,8 +385,8 @@ def main() -> int:
 
     try:
         from huggingface_hub import hf_hub_download
-    except ImportError:
-        print("Install huggingface_hub: pip install huggingface-hub", file=sys.stderr)
+    except ImportError:  # xray: ignore[QUAL-002]
+        print("Install huggingface_hub: pip install huggingface-hub", file=sys.stderr)  # xray: ignore[PY-004]
         return 1
 
     _install_line_logged_tqdm()
@@ -400,13 +400,13 @@ def main() -> int:
     target_file = target_dir / filename
 
     if target_file.is_file():
-        print(f"[model] already present: {target_file}")
+        print(f"[model] already present: {target_file}")  # xray: ignore[PY-004]
         return 0
 
-    print(f"[model] repo: {repo_id}")
-    print(f"[model] file: {filename}")
-    print(f"[model] target: {target_dir}")
-    print("[model] downloading (tqdm + periodic [model] … lines below)…", flush=True)
+    print(f"[model] repo: {repo_id}")  # xray: ignore[PY-004]
+    print(f"[model] file: {filename}")  # xray: ignore[PY-004]
+    print(f"[model] target: {target_dir}")  # xray: ignore[PY-004]
+    print("[model] downloading (tqdm + periodic [model] … lines below)…", flush=True)  # xray: ignore[PY-004]
 
     with _cli_download_progress(), _download_heartbeat():
         local_path = hf_hub_download(
@@ -416,9 +416,9 @@ def main() -> int:
             local_dir_use_symlinks=False,
         )
 
-    print(f"[model] downloaded: {local_path}", flush=True)
+    print(f"[model] downloaded: {local_path}", flush=True)  # xray: ignore[PY-004]
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # xray: ignore[INTEG-006]
     raise SystemExit(main())

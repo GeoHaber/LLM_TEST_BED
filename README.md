@@ -11,6 +11,30 @@
 Zen LLM Compare is a self-hosted, zero-cloud benchmarking tool for local GGUF language models.  
 Send any prompt to 1–8 models at once, score every response with a configurable **LLM judge**, and get a ranked results table with per-model metrics in seconds.
 
+## Three Projects Architecture
+
+| Project | Role | Location |
+|---------|------|----------|
+| **LLM_TEST_BED** (this repo) | The Exam Hall — model comparison, LLM-as-judge, benchmarking | Root |
+| **LlamaFactory** (fork) | The University — multi-teacher distillation, student training | `ZEN_Forge/LlamaFactory/` |
+| **zen_core_libs** | The Library — shared utilities (inference, evaluation, system) | [GeoHaber/zen_core_libs](https://github.com/GeoHaber/zen_core_libs) |
+
+```
+zen_core_libs (pip install -e)
+  ├── llm/          InProcessAdapter, ModelCache, GGUF utils, Gateway
+  ├── eval/         JudgeResult, multi-turn judges, tool-call evaluators
+  └── common/       SPSCRingBuffer, RAMPressureThrottle, system detection
+       │
+       ├── LLM_TEST_BED imports from zen_core_libs
+       │   ├── comparator_backend.py   (GGUF metadata, model cache)
+       │   ├── zen_eval.py             (judges, gateway, prompt versioning)
+       │   └── stress_test_parallel.py (InProcessAdapter)
+       │
+       └── LlamaFactory/scripts/ imports from zen_core_libs
+           ├── multi_teacher_generate.py (SPSCRingBuffer, RAMPressureThrottle)
+           └── zena_dean.py             (InProcessAdapter)
+```
+
 ---
 
 ## ✨ Features

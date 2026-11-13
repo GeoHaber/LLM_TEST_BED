@@ -27,289 +27,169 @@ def api():
 
 
 # ======================================================================
-# Coverage Gap Tests (34 tests)
+# Coverage Gap Tests (19 tests)
 # ======================================================================
 
 class TestComparator_Backend:
-    """Coverage gaps in comparator_backend.py — 21 untested functions."""
+    """Coverage gaps in comparator_backend.py -- 6 untested functions."""
 
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.get_gpu_info")
-def test_get_gpu_info(self):
-    """UNTESTED: get_gpu_info() at comparator_backend.py:503"""
-    # from comparator_backend import get_gpu_info
-    # result = get_gpu_info(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for comparator_backend.allow")
+def test_allow(self):
+    """UNTESTED: allow() at comparator_backend.py:1080"""
+    # from comparator_backend import allow
+    # result = allow(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.recommend_llama_build")
-def test_recommend_llama_build(self):
-    """UNTESTED: recommend_llama_build() at comparator_backend.py:547"""
-    # from comparator_backend import recommend_llama_build
-    # result = recommend_llama_build(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for comparator_backend.remaining")
+def test_remaining(self):
+    """UNTESTED: remaining() at comparator_backend.py:1093"""
+    # from comparator_backend import remaining
+    # result = remaining(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.get_system_info")
-def test_get_system_info(self):
-    """UNTESTED: get_system_info() at comparator_backend.py:577"""
-    # from comparator_backend import get_system_info
-    # result = get_system_info(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for comparator_backend.do_OPTIONS")
+def test_do_OPTIONS(self):
+    """UNTESTED: do_OPTIONS() at comparator_backend.py:1140"""
+    # from comparator_backend import do_OPTIONS
+    # result = do_OPTIONS(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.get_llama_cpp_info")
-def test_get_llama_cpp_info(self):
-    """UNTESTED: get_llama_cpp_info() at comparator_backend.py:611"""
-    # from comparator_backend import get_llama_cpp_info
-    # result = get_llama_cpp_info(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for comparator_backend.do_GET")
+def test_do_GET(self):
+    """UNTESTED: do_GET() at comparator_backend.py:1148"""
+    # from comparator_backend import do_GET
+    # result = do_GET(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.db_save_result")
-def test_db_save_result(self):
-    """UNTESTED: db_save_result() at comparator_backend.py:661"""
-    # from comparator_backend import db_save_result
-    # result = db_save_result(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for comparator_backend.do_POST")
+def test_do_POST(self):
+    """UNTESTED: do_POST() at comparator_backend.py:1242"""
+    # from comparator_backend import do_POST
+    # result = do_POST(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.db_get_results")
-def test_db_get_results(self):
-    """UNTESTED: db_get_results() at comparator_backend.py:676"""
-    # from comparator_backend import db_get_results
-    # result = db_get_results(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.db_get_elo")
-def test_db_get_elo(self):
-    """UNTESTED: db_get_elo() at comparator_backend.py:697"""
-    # from comparator_backend import db_get_elo
-    # result = db_get_elo(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.db_update_elo")
-def test_db_update_elo(self):
-    """UNTESTED: db_update_elo() at comparator_backend.py:707"""
-    # from comparator_backend import db_update_elo
-    # result = db_update_elo(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.db_clear_elo")
-def test_db_clear_elo(self):
-    """UNTESTED: db_clear_elo() at comparator_backend.py:757"""
-    # from comparator_backend import db_clear_elo
-    # result = db_clear_elo(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.extract_judge_scores")
-def test_extract_judge_scores(self):
-    """UNTESTED: extract_judge_scores() at comparator_backend.py:772"""
-    # from comparator_backend import extract_judge_scores
-    # result = extract_judge_scores(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.validate_download_url")
-def test_validate_download_url(self):
-    """UNTESTED: validate_download_url() at comparator_backend.py:920"""
-    # from comparator_backend import validate_download_url
-    # result = validate_download_url(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.get_system_info_cached")
-def test_get_system_info_cached(self):
-    """UNTESTED: get_system_info_cached() at comparator_backend.py:967"""
-    # from comparator_backend import get_system_info_cached
-    # result = get_system_info_cached(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.run_server")
-def test_run_server(self):
-    """UNTESTED: run_server() at comparator_backend.py:2677"""
-    # from comparator_backend import run_server
-    # result = run_server(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.get_or_load")
-def test_get_or_load(self):
-    """UNTESTED: get_or_load() at comparator_backend.py:275"""
-    # from comparator_backend import get_or_load
-    # result = get_or_load(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for comparator_backend.clear")
-def test_clear(self):
-    """UNTESTED: clear() at comparator_backend.py:290"""
-    # from comparator_backend import clear
-    # result = clear(...)
-    # assert result is not None
-    pass
-
-
-class TestDownload_Model:
-    """Coverage gaps in download_model.py — 4 untested functions."""
-
-@pytest.mark.skip(reason="Coverage gap — stub for download_model.resolve_repo_and_file")
-def test_resolve_repo_and_file(self):
-    """UNTESTED: resolve_repo_and_file() at download_model.py:250"""
-    # from download_model import resolve_repo_and_file
-    # result = resolve_repo_and_file(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for download_model.main")
-def test_main(self):
-    """UNTESTED: main() at download_model.py:270"""
-    # from download_model import main
-    # result = main(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for download_model.isatty")
-def test_isatty(self):
-    """UNTESTED: isatty() at download_model.py:59"""
-    # from download_model import isatty
-    # result = isatty(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for download_model.update")
-def test_update(self):
-    """UNTESTED: update() at download_model.py:200"""
-    # from download_model import update
-    # result = update(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for comparator_backend.log_message")
+def test_log_message(self):
+    """UNTESTED: log_message() at comparator_backend.py:2393"""
+    # from comparator_backend import log_message
+    # result = log_message(...)
     # assert result is not None
     pass
 
 
 class TestZen_Eval:
-    """Coverage gaps in zen_eval.py — 25 untested functions."""
+    """Coverage gaps in zen_eval.py -- 11 untested functions."""
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.init_db")
-def test_init_db(self):
-    """UNTESTED: init_db() at zen_eval.py:48"""
-    # from zen_eval import init_db
-    # result = init_db(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.delete_alias")
+def test_delete_alias(self):
+    """UNTESTED: delete_alias() at zen_eval.py:836"""
+    # from zen_eval import delete_alias
+    # result = delete_alias(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.judge_user_frustration")
-def test_judge_user_frustration(self):
-    """UNTESTED: judge_user_frustration() at zen_eval.py:229"""
-    # from zen_eval import judge_user_frustration
-    # result = judge_user_frustration(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.judge_tool_call_correctness")
+def test_judge_tool_call_correctness(self):
+    """UNTESTED: judge_tool_call_correctness() at zen_eval.py:913"""
+    # from zen_eval import judge_tool_call_correctness
+    # result = judge_tool_call_correctness(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.judge_knowledge_retention")
-def test_judge_knowledge_retention(self):
-    """UNTESTED: judge_knowledge_retention() at zen_eval.py:358"""
-    # from zen_eval import judge_knowledge_retention
-    # result = judge_knowledge_retention(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.judge_tool_call_efficiency")
+def test_judge_tool_call_efficiency(self):
+    """UNTESTED: judge_tool_call_efficiency() at zen_eval.py:1037"""
+    # from zen_eval import judge_tool_call_efficiency
+    # result = judge_tool_call_efficiency(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.save_conversation")
-def test_save_conversation(self):
-    """UNTESTED: save_conversation() at zen_eval.py:456"""
-    # from zen_eval import save_conversation
-    # result = save_conversation(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.get_gateway")
+def test_get_gateway(self):
+    """UNTESTED: get_gateway() at zen_eval.py:1322"""
+    # from zen_eval import get_gateway
+    # result = get_gateway(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.load_conversation")
-def test_load_conversation(self):
-    """UNTESTED: load_conversation() at zen_eval.py:486"""
-    # from zen_eval import load_conversation
-    # result = load_conversation(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.add_route")
+def test_add_route(self):
+    """UNTESTED: add_route() at zen_eval.py:1151"""
+    # from zen_eval import add_route
+    # result = add_route(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.record_feedback")
-def test_record_feedback(self):
-    """UNTESTED: record_feedback() at zen_eval.py:521"""
-    # from zen_eval import record_feedback
-    # result = record_feedback(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.remove_route")
+def test_remove_route(self):
+    """UNTESTED: remove_route() at zen_eval.py:1168"""
+    # from zen_eval import remove_route
+    # result = remove_route(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.update_human_score")
-def test_update_human_score(self):
-    """UNTESTED: update_human_score() at zen_eval.py:544"""
-    # from zen_eval import update_human_score
-    # result = update_human_score(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.resolve")
+def test_resolve(self):
+    """UNTESTED: resolve() at zen_eval.py:1183"""
+    # from zen_eval import resolve
+    # result = resolve(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.get_alignment_stats")
-def test_get_alignment_stats(self):
-    """UNTESTED: get_alignment_stats() at zen_eval.py:559"""
-    # from zen_eval import get_alignment_stats
-    # result = get_alignment_stats(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.get_fallback_chain")
+def test_get_fallback_chain(self):
+    """UNTESTED: get_fallback_chain() at zen_eval.py:1237"""
+    # from zen_eval import get_fallback_chain
+    # result = get_fallback_chain(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.calibrate_score")
-def test_calibrate_score(self):
-    """UNTESTED: calibrate_score() at zen_eval.py:621"""
-    # from zen_eval import calibrate_score
-    # result = calibrate_score(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.log_request")
+def test_log_request(self):
+    """UNTESTED: log_request() at zen_eval.py:1245"""
+    # from zen_eval import log_request
+    # result = log_request(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.get_feedback_history")
-def test_get_feedback_history(self):
-    """UNTESTED: get_feedback_history() at zen_eval.py:643"""
-    # from zen_eval import get_feedback_history
-    # result = get_feedback_history(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.get_route_stats")
+def test_get_route_stats(self):
+    """UNTESTED: get_route_stats() at zen_eval.py:1272"""
+    # from zen_eval import get_route_stats
+    # result = get_route_stats(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.register_prompt")
-def test_register_prompt(self):
-    """UNTESTED: register_prompt() at zen_eval.py:684"""
-    # from zen_eval import register_prompt
-    # result = register_prompt(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for zen_eval.list_routes")
+def test_list_routes(self):
+    """UNTESTED: list_routes() at zen_eval.py:1312"""
+    # from zen_eval import list_routes
+    # result = list_routes(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.load_prompt")
-def test_load_prompt(self):
-    """UNTESTED: load_prompt() at zen_eval.py:721"""
-    # from zen_eval import load_prompt
-    # result = load_prompt(...)
+
+class TestConftest:
+    """Coverage gaps in tests/conftest.py -- 2 untested functions."""
+
+@pytest.mark.skip(reason="Coverage gap -- stub for tests.conftest.model_dirs")
+def test_model_dirs(self):
+    """UNTESTED: model_dirs() at tests/conftest.py:15"""
+    # from tests.conftest import model_dirs
+    # result = model_dirs(...)
     # assert result is not None
     pass
 
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.set_alias")
-def test_set_alias(self):
-    """UNTESTED: set_alias() at zen_eval.py:773"""
-    # from zen_eval import set_alias
-    # result = set_alias(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.list_prompts")
-def test_list_prompts(self):
-    """UNTESTED: list_prompts() at zen_eval.py:799"""
-    # from zen_eval import list_prompts
-    # result = list_prompts(...)
-    # assert result is not None
-    pass
-
-@pytest.mark.skip(reason="Coverage gap — stub for zen_eval.list_aliases")
-def test_list_aliases(self):
-    """UNTESTED: list_aliases() at zen_eval.py:822"""
-    # from zen_eval import list_aliases
-    # result = list_aliases(...)
+@pytest.mark.skip(reason="Coverage gap -- stub for tests.conftest.reset_global_rate_limiter")
+def test_reset_global_rate_limiter(self):
+    """UNTESTED: reset_global_rate_limiter() at tests/conftest.py:21"""
+    # from tests.conftest import reset_global_rate_limiter
+    # result = reset_global_rate_limiter(...)
     # assert result is not None
     pass
 

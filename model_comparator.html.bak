@@ -1,0 +1,2189 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LLM Compare</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "primary": "#6366f1",
+        "background-light": "#f8fafc",
+        "background-dark": "#0f1117",
+        "neutral-dark": "#1a1d2e",
+        "border-dark": "#1e293b",
+        "surface": "#111827",
+        "surface-2": "#1e2235",
+      },
+      fontFamily: { "display": ["Inter"] },
+    },
+  },
+}
+</script>
+<style>
+/* ── Base ── */
+body { font-family: 'Inter', sans-serif; }
+.material-symbols-outlined { font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20; font-size: 18px; }
+.material-symbols-outlined.fill-1 { font-variation-settings: 'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 20; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.25); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.4); }
+
+/* ── Tab navigation ── */
+.nav-tab { padding: 8px 16px; font-size: 13px; font-weight: 600; color: #94a3b8; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.15s; white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none; }
+.nav-tab:hover { color: #e2e8f0; }
+.nav-tab.active { color: #6366f1; border-bottom-color: #6366f1; }
+
+/* ── Tab panels ── */
+.tab-content { display: none; }
+.tab-content.active { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+/* ── Cards ── */
+.card { background: #1a1d2e; border: 1px solid #1e293b; border-radius: 8px; }
+.card-header { padding: 10px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; }
+
+/* ── Quick prompt pills ── */
+.qpill { font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 6px; border: 1px solid #334155; background: #1e2235; color: #94a3b8; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+.qpill:hover { border-color: #6366f1; color: #c7d2fe; background: rgba(99,102,241,0.1); }
+
+/* ── Model row ── */
+.model-row { transition: background 0.1s; cursor: pointer; }
+.model-row:hover { background: rgba(99,102,241,0.06); }
+.model-row.selected { background: rgba(99,102,241,0.12); }
+.model-row.selected td { color: #6366f1; }
+
+/* ── Status ── */
+#statusBar { display: none; }
+#statusBar.show { display: flex; }
+
+/* ── Toast ── */
+#toastContainer { position: fixed; top: 16px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; max-width: 420px; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: toastIn 0.2s ease; }
+.toast.toast-success { background: #059669; color: #fff; }
+.toast.toast-error { background: #dc2626; color: #fff; }
+.toast.toast-warning { background: #d97706; color: #fff; }
+.toast.toast-info { background: #6366f1; color: #fff; }
+.toast.toast-out { animation: toastOut 0.2s ease forwards; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes toastOut { to { opacity: 0; transform: translateX(30px); } }
+
+/* ── Download modal ── */
+.dl-modal { display: none; position: fixed; inset: 0; z-index: 9999; }
+.dl-modal.open { display: flex; }
+.dl-modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.6); }
+.dl-modal-box { position: relative; z-index: 1; background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; width: 96%; max-width: 920px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; margin: auto; box-shadow: 0 24px 48px rgba(0,0,0,0.5); }
+.dest-bar { display: flex; align-items: center; gap: 10px; padding: 10px 24px; background: rgba(99,102,241,0.06); border-bottom: 1px solid #1e293b; flex-shrink: 0; }
+.dest-bar code { font-size: 14px; font-weight: 700; background: rgba(99,102,241,0.1); padding: 3px 10px; border-radius: 6px; color: #6366f1; font-family: monospace; }
+.catalog-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; overflow-y: auto; max-height: 310px; padding: 2px; }
+.mcard { border-radius: 8px; padding: 12px; cursor: pointer; border: 1px solid #1e293b; transition: all 0.15s; background: #111827; border-left: 3px solid var(--mc,#6366f1); }
+.mcard:hover { border-color: var(--mc,#6366f1); }
+.mcard.card-sel { border-color: var(--mc,#6366f1); background: rgba(99,102,241,0.08); }
+.ow-overlay { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; border-radius: 12px; }
+.ow-box { width: 480px; border-radius: 10px; overflow: hidden; }
+
+/* ── Metric tooltips ── */
+.metric-tip { position: relative; cursor: help; display: inline-flex; align-items: center; gap: 3px; }
+.metric-tip .tip-icon { font-size: 11px; color: #64748b; opacity: 0.6; transition: opacity 0.15s; }
+.metric-tip:hover .tip-icon { opacity: 1; color: #6366f1; }
+.metric-tip .tip-text { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 10px; font-size: 10px; font-weight: 500; white-space: nowrap; z-index: 60; box-shadow: 0 4px 12px rgba(0,0,0,0.3); text-transform: none; letter-spacing: normal; pointer-events: none; }
+.metric-tip .tip-text::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #1e293b; }
+.metric-tip:hover .tip-text { display: block; }
+
+/* ── Race bars ── */
+.race-bar { position: relative; height: 24px; border-radius: 6px; background: #1e293b; overflow: hidden; margin: 4px 0; }
+.race-fill { height: 100%; border-radius: 6px; transition: width 0.15s linear; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; font-size: 10px; font-weight: 700; color: #fff; min-width: 20px; }
+.race-bar.finished .race-fill { background: linear-gradient(90deg,#10b981,#059669) !important; }
+
+/* ── Readiness bar ── */
+.readiness-bar { height: 6px; border-radius: 999px; background: #1e293b; overflow: hidden; }
+.readiness-fill { height: 100%; border-radius: 999px; transition: width 0.5s ease; }
+.readiness-fill.high { background: #10b981; }
+.readiness-fill.mid { background: #f59e0b; }
+.readiness-fill.low { background: #ef4444; }
+
+/* ── Chat ── */
+.chat-msg-user { align-self: flex-end; max-width: 85%; background: #6366f1; color: #fff; border-radius: 12px 12px 2px 12px; padding: 8px 14px; font-size: 13px; line-height: 1.45; }
+.chat-msg-assistant { align-self: flex-start; max-width: 90%; background: #1e2235; color: #e2e8f0; border-radius: 2px 12px 12px 12px; padding: 8px 14px; font-size: 13px; line-height: 1.5; border: 1px solid #334155; }
+.chat-msg-error { align-self: center; font-size: 11px; color: #ef4444; background: #450a0a; border-radius: 6px; padding: 4px 10px; }
+.chat-typing { align-self: flex-start; display: flex; gap: 4px; padding: 10px 14px; background: #1e2235; border: 1px solid #334155; border-radius: 2px 12px 12px 12px; }
+.chat-typing span { width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; animation: typDot 0.9s ease-in-out infinite; }
+.chat-typing span:nth-child(2) { animation-delay: 0.15s; }
+.chat-typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typDot { 0%,100% { opacity: 0.3; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.1); } }
+
+/* ── Podium / debrief ── */
+.podium-card { border-radius: 8px; padding: 16px; position: relative; overflow: hidden; }
+.podium-card.winner { border: 2px solid #f59e0b; }
+.podium-card.winner::before { content: '\1F3C6'; position: absolute; top: 8px; right: 12px; font-size: 24px; opacity: 0.7; }
+.podium-card.runner-up { border: 2px solid #94a3b8; opacity: 0.85; }
+.debrief-card { border-radius: 8px; overflow: hidden; background: #1a1d2e; border: 1px solid #1e293b; }
+.strat-implication { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; border-radius: 6px; font-size: 11px; line-height: 1.5; }
+.strat-implication.positive { background: rgba(16,185,129,0.08); border-left: 2px solid #10b981; }
+.strat-implication.negative { background: rgba(239,68,68,0.08); border-left: 2px solid #ef4444; }
+
+/* ── Zena chat bar ── */
+#zenaChatBar { display: flex; align-items: center; gap: 8px; background: #1a1d2e; border: 1px solid #334155; border-radius: 8px; padding: 7px 10px; cursor: text; transition: all 0.15s; }
+#zenaChatBar:focus-within { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
+#zenaChatInput { flex: 1; font-size: 13px; color: #e2e8f0; background: transparent; border: none; outline: none; font-family: inherit; }
+#zenaChatInput::placeholder { color: #64748b; font-size: 12px; }
+.zbtn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #334155; background: #111827; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; color: #94a3b8; transition: all 0.1s; flex-shrink: 0; padding: 0; }
+.zbtn:hover { border-color: #6366f1; color: #a78bfa; }
+.zbtn.send { background: #6366f1 !important; border-color: #6366f1 !important; color: #fff !important; }
+
+/* ── Zena overlay ── */
+#zenaChatOverlay { display: none; position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.5); align-items: flex-end; justify-content: center; }
+#zenaChatOverlay.open { display: flex; }
+#zenaChatPanel { width: 100%; max-width: 720px; max-height: 72vh; display: flex; flex-direction: column; background: #0f172a; border: 1px solid #1e293b; border-radius: 12px 12px 0 0; box-shadow: 0 -8px 40px rgba(0,0,0,0.4); overflow: hidden; }
+#zOvHdr { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #1e293b; flex-shrink: 0; }
+#zOvMsgs { flex: 1; overflow-y: auto; padding: 10px 12px 6px; display: flex; flex-direction: column; gap: 7px; }
+#zOvFoot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid #1e293b; flex-shrink: 0; }
+#zOvInput { flex: 1; font-size: 13px; color: #e2e8f0; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 7px 12px; outline: none; font-family: inherit; resize: none; min-height: 36px; max-height: 96px; }
+#zOvInput:focus { border-color: #6366f1; }
+
+/* ── Lang dropdown ── */
+.lang-menu-item { display: block; width: 100%; text-align: left; padding: 5px 14px; font-size: 12px; font-weight: 600; color: #94a3b8; background: transparent; border: none; cursor: pointer; border-radius: 4px; }
+.lang-menu-item:hover { background: #1e293b; color: #a78bfa; }
+.lang-btn { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid #334155; background: transparent; color: #94a3b8; cursor: pointer; }
+.lang-btn.active-lang { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+/* ── Eval studio ── */
+.eval-card { background: #1a1d2e; border: 1px solid #1e293b; border-radius: 8px; overflow: hidden; }
+.eval-card-header { padding: 12px 16px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; }
+.eval-input { width: 100%; background: #111827; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; color: #e2e8f0; font-size: 13px; outline: none; font-family: inherit; }
+.eval-input:focus { border-color: #6366f1; }
+.eval-btn { padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.1s; }
+.eval-btn-primary { background: #6366f1; color: #fff; border: none; }
+.eval-btn-primary:hover { background: #4f46e5; }
+.eval-btn-secondary { background: transparent; color: #94a3b8; border: 1px solid #334155; }
+.eval-btn-secondary:hover { border-color: #6366f1; color: #c7d2fe; }
+
+/* ── Light mode ── */
+:root:not(.dark) body { background: #f8fafc; color: #1e293b; }
+:root:not(.dark) .card, :root:not(.dark) .eval-card { background: #fff; border-color: #e2e8f0; }
+:root:not(.dark) .card-header, :root:not(.dark) .eval-card-header { color: #64748b; border-color: #e2e8f0; }
+:root:not(.dark) .nav-tab { color: #64748b; }
+:root:not(.dark) .nav-tab:hover { color: #1e293b; }
+:root:not(.dark) .qpill { background: #f8fafc; border-color: #e2e8f0; color: #64748b; }
+:root:not(.dark) .model-row:hover { background: rgba(99,102,241,0.04); }
+:root:not(.dark) select { color: #1e293b; }
+:root:not(.dark) select option { background: #fff; }
+:root:not(.dark) input[type=text], :root:not(.dark) input[type=password], :root:not(.dark) textarea { color: #1e293b; }
+
+/* Hidden panels for JS compat */
+#scoutPanel, #matrixPanel { display: none; }
+
+/* ── Terrain badges (used by app.js) ── */
+.terrain-badge { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+</style>
+</head>
+<body class="bg-background-dark text-slate-100 font-display h-screen flex flex-col overflow-hidden">
+
+<!-- Toast Container -->
+<div id="toastContainer"></div>
+
+<!-- ═══════════ TOP NAV ═══════════ -->
+<header class="h-12 shrink-0 border-b border-border-dark bg-background-dark flex items-center justify-between px-5 z-40">
+  <div class="flex items-center gap-6">
+    <!-- Logo -->
+    <div class="flex items-center gap-2 shrink-0">
+      <img src="zena_256x256.png" alt="" class="w-7 h-7 rounded-lg object-cover border border-primary/40" onerror="this.onerror=null;this.src=typeof _ZENA_B64!=='undefined'?_ZENA_B64:'';">
+      <span class="text-sm font-bold tracking-tight"><span class="text-primary">LLM</span><span class="text-slate-300">Compare</span></span>
+    </div>
+    <div class="w-px h-5 bg-slate-700"></div>
+    <!-- Tabs -->
+    <nav class="flex items-center gap-1" id="mainNav">
+      <button class="nav-tab active" data-tab="compare" onclick="switchTab('compare')">
+        <span class="material-symbols-outlined mr-1" style="font-size:14px;vertical-align:-2px;">compare</span>Compare
+      </button>
+      <button class="nav-tab" data-tab="models" onclick="switchTab('models')">
+        <span class="material-symbols-outlined mr-1" style="font-size:14px;vertical-align:-2px;">database</span>Models
+      </button>
+      <button class="nav-tab" data-tab="leaderboard" onclick="switchTab('leaderboard')">
+        <span class="material-symbols-outlined mr-1" style="font-size:14px;vertical-align:-2px;">leaderboard</span>Leaderboard
+      </button>
+      <button class="nav-tab" data-tab="eval" onclick="switchTab('eval')">
+        <span class="material-symbols-outlined mr-1" style="font-size:14px;vertical-align:-2px;">science</span>Eval Studio
+      </button>
+      <button class="nav-tab" data-tab="skilllab" onclick="switchTab('skilllab')">
+        <span class="material-symbols-outlined mr-1" style="font-size:14px;vertical-align:-2px;">auto_fix_high</span>Skill Lab
+      </button>
+    </nav>
+  </div>
+  <!-- Right: HW info + theme + lang -->
+  <div class="flex items-center gap-3 shrink-0">
+    <div id="hwInfoStrip" class="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 overflow-hidden">
+      <span id="hwInfoLoading" class="text-[10px] whitespace-nowrap">detecting...</span>
+    </div>
+    <div class="w-px h-4 bg-slate-700"></div>
+    <button onclick="toggleTheme()" class="flex items-center gap-1 px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-primary hover:text-primary text-xs font-semibold transition-all">
+      <span class="material-symbols-outlined" style="font-size:14px;" id="themeIcon">light_mode</span>
+      <span id="themeLabel">Light</span>
+    </button>
+    <div class="relative" id="langDropdownWrap">
+      <button onclick="toggleLangMenu()" id="langDropdownBtn" class="flex items-center gap-1 px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-primary hover:text-primary text-[11px] font-semibold transition-all">
+        <span id="langDropdownLabel">EN</span>
+        <span class="material-symbols-outlined" style="font-size:12px;">arrow_drop_down</span>
+      </button>
+      <div id="langDropdownMenu" class="hidden absolute right-0 top-full mt-1 z-50 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1 min-w-[130px]">
+        <button onclick="setLang('en')" class="lang-menu-item">English</button>
+        <button onclick="setLang('he')" class="lang-menu-item">Hebrew</button>
+        <button onclick="setLang('ar')" class="lang-menu-item">Arabic</button>
+        <button onclick="setLang('es')" class="lang-menu-item">Spanish</button>
+        <button onclick="setLang('fr')" class="lang-menu-item">French</button>
+        <button onclick="setLang('de')" class="lang-menu-item">German</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════ MAIN CONTENT ═══════════ -->
+<div class="flex-1 flex flex-col overflow-hidden">
+
+<!-- ──── TAB: COMPARE ──── -->
+<div id="tab-compare" class="tab-content active">
+  <!-- Control strip -->
+  <div class="shrink-0 border-b border-border-dark bg-neutral-dark px-4 py-2.5 flex flex-col gap-2">
+    <!-- Row 1: Selected models + Run -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 flex-1 min-w-0">
+        <span class="text-[11px] font-bold text-slate-500 uppercase shrink-0">Models:</span>
+        <div class="flex gap-1 flex-wrap" id="activeChipRow">
+          <span class="text-[11px] text-slate-500">None selected &mdash; go to Models tab</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Judge model -->
+        <select id="judgeModel" onchange="this.dataset.userChosen='1';_syncZenaChatModel()" class="bg-surface border border-slate-700 rounded-md text-[11px] px-2 py-1.5 text-slate-300 outline-none min-w-[140px]">
+          <option value="">Judge: None</option>
+          <option value="local:best">Auto (lightest local)</option>
+          <optgroup label="Local Models" id="judgeLocalOpts"></optgroup>
+          <optgroup label="Online (needs key)">
+            <option value="online:gpt4">GPT-4</option>
+            <option value="online:gpt4-turbo">GPT-4 Turbo</option>
+            <option value="online:claude-opus">Claude Opus</option>
+            <option value="online:claude-sonnet">Claude Sonnet</option>
+            <option value="online:gemini-pro">Gemini Pro</option>
+          </optgroup>
+        </select>
+        <select id="judgeTemplate" class="bg-surface border border-slate-700 rounded-md text-[10px] px-1.5 py-1.5 text-slate-400 outline-none">
+          <option value="medical">Medical</option>
+          <option value="general" selected>General</option>
+          <option value="coding">Code</option>
+          <option value="reasoning">Reasoning</option>
+          <option value="multilingual">Multilingual</option>
+        </select>
+        <div class="w-px h-5 bg-slate-700"></div>
+        <button id="monkeyBtn" onclick="runMonkey()" class="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-slate-700 text-slate-400 hover:text-primary hover:border-primary transition-all" title="Random models + random question">
+          <span id="monkeyBtnLabel">Random</span>
+        </button>
+        <button id="runBtn" onclick="runComparison()" class="flex items-center gap-1.5 px-5 py-1.5 bg-primary text-white rounded-md font-bold text-[13px] hover:bg-indigo-600 active:scale-95 transition-all">
+          <span class="material-symbols-outlined" style="font-size:14px;">play_arrow</span>
+          <span id="runBtnLabel">Run</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Row 2: Quick prompts -->
+    <div class="flex items-center gap-1.5 flex-wrap">
+      <span class="text-[10px] font-bold text-slate-500 uppercase shrink-0">Quick:</span>
+      <button onclick="loadQuestion('random')" class="qpill">Random</button>
+      <button onclick="loadQuestion('ops')" class="qpill">Hospital Ops</button>
+      <button onclick="loadQuestion('emergency')" class="qpill">Emergency</button>
+      <button onclick="loadQuestion('cardiology')" class="qpill">Cardiology</button>
+      <button onclick="loadQuestion('coding')" class="qpill">Code</button>
+      <button onclick="loadQuestion('reasoning')" class="qpill">Reasoning</button>
+      <button onclick="loadQuestion('multilingual')" class="qpill">Multilingual</button>
+      <button onclick="loadQuestion('safety')" class="qpill">Safety</button>
+      <button onclick="loadQuestion('creative')" class="qpill">Creative</button>
+      <button onclick="loadQuestion('summarization')" class="qpill">Summary</button>
+      <button onclick="loadQuestion('ethics')" class="qpill">Ethics</button>
+      <div class="w-px h-3.5 bg-slate-700 mx-0.5"></div>
+      <button onclick="loadScenario('clinical_triage')" class="qpill" title="Medical questions, clinical judge, low temp">Clinical</button>
+      <button onclick="loadScenario('code_review')" class="qpill" title="Code review scenario">Code Review</button>
+      <button onclick="loadScenario('speed_test')" class="qpill" title="Short answers, 128 tokens">Speed</button>
+      <button onclick="loadScenario('stress_test')" class="qpill" title="Long context, 4096 tokens">Stress</button>
+      <div class="ml-auto flex items-center gap-2">
+        <label class="text-[10px] font-semibold text-slate-500 cursor-pointer flex items-center gap-1 px-2 py-1 rounded border border-dashed border-slate-600 hover:border-primary hover:text-primary transition-all" title="Attach a file">
+          File <input type="file" id="filePicker" accept=".txt,.json,.md,.csv,.js,.py,.html,.xml,.log" class="hidden"/>
+        </label>
+        <label class="text-[10px] font-semibold text-slate-500 cursor-pointer flex items-center gap-1 px-2 py-1 rounded border border-dashed border-slate-600 hover:border-primary hover:text-primary transition-all" title="Attach folder">
+          Folder <input type="file" id="dirPicker" webkitdirectory multiple accept=".txt,.json,.md,.csv,.js,.py,.html,.xml,.log" class="hidden"/>
+        </label>
+        <button id="clearDocBtn" onclick="clearDocument()" class="hidden text-[10px] px-2 py-1 rounded border border-slate-700 text-slate-500 hover:text-red-400">Clear</button>
+        <span id="filePreview" class="text-[9px] text-slate-500 font-mono truncate max-w-[160px]">No file</span>
+        <div id="documentIndicator" class="hidden text-[9px] px-1.5 py-0.5 bg-emerald-900/50 text-emerald-400 rounded font-bold"><span id="docName">file</span></div>
+        <div id="chunkWarn" class="hidden text-[9px] font-bold text-amber-400"></div>
+      </div>
+    </div>
+
+    <!-- Row 3: Prompt inputs -->
+    <div class="flex flex-col gap-1.5">
+      <!-- E9: System prompt with presets -->
+      <div class="flex items-center gap-2">
+        <select id="systemPromptPreset" onchange="_applySystemPreset(this.value)" class="bg-surface border border-slate-700 rounded text-[10px] px-1.5 py-0.5 outline-none text-slate-400" title="System prompt presets">
+          <option value="">— Preset —</option>
+          <option value="helpful">Helpful Assistant</option>
+          <option value="medical">Medical Expert</option>
+          <option value="coder">Senior Developer</option>
+          <option value="teacher">Patient Teacher</option>
+          <option value="concise">Concise Responder</option>
+          <option value="creative">Creative Writer</option>
+          <option value="analyst">Data Analyst</option>
+          <option value="socratic">Socratic Tutor</option>
+        </select>
+        <span class="text-[9px] text-slate-600 flex-1">System prompt</span>
+      </div>
+      <textarea id="systemPrompt" rows="1"
+        class="w-full bg-surface border border-slate-700 rounded-md px-3 py-1.5 text-[12px] resize-none focus:border-primary outline-none placeholder:text-slate-600 font-mono"
+        placeholder="System prompt (optional)..."></textarea>
+      <!-- E4: Reference answer for judge -->
+      <details class="group">
+        <summary class="text-[10px] text-slate-500 cursor-pointer hover:text-primary select-none flex items-center gap-1">
+          <span class="material-symbols-outlined" style="font-size:12px;">science</span> Reference Answer &amp; Draft Model
+        </summary>
+        <div class="mt-1.5 flex flex-col gap-1.5">
+          <textarea id="referenceAnswer" rows="2"
+            class="w-full bg-surface border border-slate-700 rounded-md px-3 py-1.5 text-[11px] resize-y focus:border-primary outline-none placeholder:text-slate-600 font-mono"
+            placeholder="Optional: paste a gold-standard answer here. The judge will compare model responses against this reference."></textarea>
+          <select id="draftModel" class="bg-surface border border-slate-700 rounded text-[10px] px-1.5 py-0.5 outline-none text-slate-400" title="E5: Draft model for speculative decoding (optional)">
+            <option value="">No draft model (standard inference)</option>
+          </select>
+        </div>
+      </details>
+      <div class="relative">
+        <textarea id="prompt" rows="2"
+          class="w-full bg-surface border border-slate-700 rounded-lg px-3 py-2 text-[13px] resize-none focus:border-primary outline-none placeholder:text-slate-600"
+          placeholder="Enter your test prompt here..."></textarea>
+        <span class="absolute bottom-2 right-3 text-[11px] text-slate-600 font-mono" id="tokenCount">0 / 1000 tokens</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="prependBtn" onclick="prependDocumentToPrompt()" class="hidden text-[11px] px-2 py-1 rounded border border-slate-700 text-slate-500 hover:text-primary hover:border-primary">Prepend Doc</button>
+        <button id="replaceBtn" onclick="replacePromptWithDocument()" class="hidden text-[11px] px-2 py-1 rounded border border-slate-700 text-slate-500 hover:text-primary hover:border-primary">Replace with Doc</button>
+        <button onclick="_toggleBatchMode()" class="text-[11px] px-2 py-1 rounded border border-slate-700 text-slate-500 hover:text-primary hover:border-primary" title="Batch mode">Batch</button>
+        <button onclick="toggleAdvParams()" class="text-[11px] px-2 py-1 rounded border border-slate-700 text-slate-500 hover:text-primary hover:border-primary ml-auto">Params</button>
+        <button onclick="clearAll()" class="text-[11px] text-slate-600 hover:text-red-400 font-semibold">Clear</button>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div id="statusBar" class="items-center gap-2 text-[12px] px-2 py-0.5 rounded">
+      <span id="statusSpinner" class="hidden w-3 h-3 border border-current border-t-transparent rounded-full animate-spin inline-block"></span>
+      <span id="statusMsg"></span>
+    </div>
+
+    <!-- Batch panel (collapsed) -->
+    <div id="batchPanel" class="hidden flex-col gap-2 p-3 rounded-lg bg-amber-900/10 border border-amber-800/30">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-bold text-amber-400">BATCH MODE &mdash; one prompt per line</span>
+        <div class="flex gap-2">
+          <button onclick="_addBankToBatch()" class="text-[10px] text-amber-500 hover:text-amber-400 font-bold">+ Add All Bank</button>
+          <span id="batchCount" class="text-[10px] text-amber-600">0 prompts</span>
+        </div>
+      </div>
+      <textarea id="batchPrompts" rows="4" class="w-full bg-surface border border-amber-700/50 rounded px-3 py-1.5 text-[12px] resize-y focus:ring-1 focus:ring-amber-400 outline-none font-mono placeholder:text-amber-700" placeholder="Enter multiple prompts, one per line..." oninput="_updateBatchCount()"></textarea>
+      <button onclick="_runBatch()" id="batchRunBtn" class="px-4 py-1.5 bg-amber-600 text-white rounded-md font-bold text-[11px] hover:bg-amber-500 transition-all flex items-center gap-1.5 self-start">
+        <span class="material-symbols-outlined" style="font-size:13px;">play_arrow</span> Run Batch
+      </button>
+    </div>
+
+    <!-- Advanced params (collapsed) -->
+    <div id="advParams" class="hidden flex-col gap-2 p-3 rounded-lg bg-surface border border-slate-700">
+      <div class="flex items-center gap-5 flex-wrap">
+        <label class="flex items-center gap-1.5 text-[11px]">
+          <span class="text-slate-500 font-semibold">Temp</span>
+          <input type="range" id="paramTemp" min="0" max="1.5" step="0.05" value="0.7" class="w-20 accent-primary" oninput="document.getElementById('paramTempVal').textContent=parseFloat(this.value).toFixed(2);"/>
+          <span id="paramTempVal" class="font-mono font-bold text-primary w-7 text-right">0.7</span>
+          <span id="paramTempLabel" class="text-[10px] text-slate-500"></span>
+        </label>
+        <label class="flex items-center gap-1.5 text-[11px]">
+          <span class="text-slate-500 font-semibold">Top-P</span>
+          <input type="range" id="paramTopP" min="0" max="1" step="0.05" value="0.95" class="w-20 accent-primary" oninput="document.getElementById('paramTopPVal').textContent=parseFloat(this.value).toFixed(2);"/>
+          <span id="paramTopPVal" class="font-mono font-bold text-primary w-7 text-right">0.95</span>
+        </label>
+        <label class="flex items-center gap-1.5 text-[11px]">
+          <span class="text-slate-500 font-semibold">Repeat</span>
+          <input type="range" id="paramRepeat" min="1" max="2" step="0.05" value="1.1" class="w-20 accent-primary" oninput="document.getElementById('paramRepeatVal').textContent=parseFloat(this.value).toFixed(2);"/>
+          <span id="paramRepeatVal" class="font-mono font-bold text-primary w-7 text-right">1.10</span>
+        </label>
+      </div>
+      <div class="flex items-center gap-5 flex-wrap">
+        <label class="flex items-center gap-1.5 text-[11px]">
+          <span class="text-slate-500 font-semibold">Max tokens</span>
+          <select id="paramMaxTokens" class="bg-surface-2 border border-slate-700 rounded text-[11px] px-1.5 py-0.5 outline-none text-slate-300">
+            <option value="128">128</option><option value="256">256</option><option value="512" selected>512</option>
+            <option value="1024">1024</option><option value="2048">2048</option><option value="4096">4096</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-[11px]">
+          <span class="text-slate-500 font-semibold">Context</span>
+          <select id="paramCtx" class="bg-surface-2 border border-slate-700 rounded text-[11px] px-1.5 py-0.5 outline-none text-slate-300">
+            <option value="2048">2K</option><option value="4096">4K</option><option value="8192" selected>8K</option>
+            <option value="16384">16K</option><option value="32768">32K</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-[11px]">
+          <span class="text-slate-500 font-semibold">Timeout</span>
+          <select id="paramTimeout" class="bg-surface-2 border border-slate-700 rounded text-[11px] px-1.5 py-0.5 outline-none text-slate-300">
+            <option value="60">1 min</option><option value="120">2 min</option><option value="300" selected>5 min</option>
+            <option value="600">10 min</option><option value="900">15 min</option><option value="1800">30 min</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-[11px]">
+          <span class="text-slate-500 font-semibold">Speed profile</span>
+          <select id="performanceProfile" class="bg-surface-2 border border-slate-700 rounded text-[11px] px-1.5 py-0.5 outline-none text-slate-300">
+            <option value="fastest" selected>Fastest</option>
+            <option value="balanced">Balanced</option>
+            <option value="stable">Stable / Low-RAM</option>
+          </select>
+        </label>
+        <span id="paramPresetNote" class="text-[10px] text-emerald-500 font-semibold hidden">Preset applied</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results area -->
+  <div class="flex-1 overflow-auto">
+    <div id="resultsPlaceholder" class="flex flex-col items-center justify-center h-full text-slate-500 gap-4 px-6">
+      <span class="material-symbols-outlined" style="font-size:56px;opacity:0.12;">compare</span>
+      <p class="text-base font-bold text-slate-400">Ready to compare</p>
+      <div class="max-w-md text-center space-y-2">
+        <div class="flex items-center gap-2 text-[12px] text-slate-500"><span class="material-symbols-outlined text-primary" style="font-size:16px;">looks_one</span> Go to <button onclick="switchTab('models')" class="text-primary font-bold hover:underline">Models</button> tab and select 1–6 models</div>
+        <div class="flex items-center gap-2 text-[12px] text-slate-500"><span class="material-symbols-outlined text-primary" style="font-size:16px;">looks_two</span> Type a prompt or click a <span class="font-semibold text-slate-400">Quick</span> pill above</div>
+        <div class="flex items-center gap-2 text-[12px] text-slate-500"><span class="material-symbols-outlined text-primary" style="font-size:16px;">looks_3</span> Click <span class="font-bold text-primary">Run</span> — models race, judge scores, winner crowned</div>
+      </div>
+      <p class="text-[10px] text-slate-600 mt-2">Results appear here: side-by-side responses, speed metrics, judge reasoning &amp; rankings</p>
+    </div>
+    <div id="resultsSection" class="hidden">
+      <div class="card mx-0 border-x-0 rounded-none">
+        <div class="card-header">
+          <span>RESULTS</span>
+          <div class="flex items-center gap-3">
+            <button onclick="_shareReport()" class="text-primary hover:text-primary/80 text-[11px] font-bold">SHARE</button>
+            <button onclick="exportCSV()" class="text-primary hover:text-primary/80 text-[11px] font-bold">EXPORT CSV</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-[13px]">
+            <thead class="bg-surface sticky top-0 z-10 border-b border-border-dark">
+              <tr class="text-slate-500 uppercase" style="font-size:11px;">
+                <th class="px-4 py-2.5">Model</th>
+                <th class="px-4 py-2.5">Response Preview</th>
+                <th class="px-4 py-2.5"><span class="metric-tip">TTFT<span class="tip-icon">ⓘ</span><span class="tip-text">Time To First Token — how fast the model starts responding. Lower = snappier UX.</span></span></th>
+                <th class="px-4 py-2.5"><span class="metric-tip">Total<span class="tip-icon">ⓘ</span><span class="tip-text">Total wall-clock time from request to last token.</span></span></th>
+                <th class="px-4 py-2.5"><span class="metric-tip">Tok/s<span class="tip-icon">ⓘ</span><span class="tip-text">Tokens per second — generation speed. Higher = faster output.</span></span></th>
+                <th class="px-4 py-2.5"><span class="metric-tip">Eff.<span class="tip-icon">ⓘ</span><span class="tip-text">Efficiency — tokens/sec per GB of model. Higher = better speed-to-size ratio.</span></span></th>
+                <th class="px-4 py-2.5"><span class="metric-tip">RAM<span class="tip-icon">ⓘ</span><span class="tip-text">Extra RAM consumed while the model was loaded and generating.</span></span></th>
+                <th class="px-4 py-2.5">Size</th>
+                <th class="px-4 py-2.5"><span class="metric-tip">Quality<span class="tip-icon">ⓘ</span><span class="tip-text">Overall quality score (0-10) from the LLM judge. Requires a judge model.</span></span></th>
+                <th class="px-4 py-2.5"><span class="metric-tip">Accuracy<span class="tip-icon">ⓘ</span><span class="tip-text">Factual correctness rated by the judge (0-10).</span></span></th>
+                <th class="px-4 py-2.5"><span class="metric-tip">Reasoning<span class="tip-icon">ⓘ</span><span class="tip-text">Logical coherence and reasoning depth (0-10).</span></span></th>
+                <th class="px-4 py-2.5"><span class="metric-tip">Instruction<span class="tip-icon">ⓘ</span><span class="tip-text">Did the model follow the prompt instructions? ✓ = yes.</span></span></th>
+                <th class="px-4 py-2.5"><span class="metric-tip">Safety<span class="tip-icon">ⓘ</span><span class="tip-text">Content safety check — safe, refused, or flagged unsafe.</span></span></th>
+                <th class="px-4 py-2.5 text-right">Cost</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="responseCards" class="hidden grid gap-4 p-4"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ──── TAB: MODELS ──── -->
+<div id="tab-models" class="tab-content">
+  <div class="flex-1 overflow-auto p-4">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full" style="grid-template-rows: 1fr auto;">
+
+      <!-- Local Model Library -->
+      <div class="card lg:col-span-2 flex flex-col" style="max-height: calc(100vh - 180px);">
+        <div class="card-header">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined" style="font-size:14px;">database</span>
+            LOCAL MODELS
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="selectedCountLabel" class="text-[11px] text-slate-400">0 selected</span>
+            <span class="text-[11px] text-slate-600">&middot; Max 6</span>
+            <button onclick="clearAllSelections()" class="text-primary hover:text-primary/80 text-[11px] font-bold ml-1">Clear</button>
+          </div>
+        </div>
+        <!-- llama.cpp status -->
+        <div id="llamaSidePanel" class="flex items-center gap-2 px-4 py-2 border-b border-border-dark bg-surface/50">
+          <span class="material-symbols-outlined text-slate-500" style="font-size:12px;">code</span>
+          <span class="text-[11px] flex-1 truncate text-slate-400" id="llamaSideStatus">checking...</span>
+          <button onclick="openLlamaInstall()" id="llamaSideInstallBtn" class="hidden text-[10px] px-2 py-0.5 rounded border border-primary/60 text-primary hover:bg-primary/10 font-bold shrink-0">Install</button>
+          <button onclick="checkSystemStatus()" class="text-[9px] text-slate-500 hover:text-primary shrink-0" title="Refresh">Refresh</button>
+        </div>
+        <!-- Filter -->
+        <div class="px-3 py-2 border-b border-border-dark">
+          <div class="relative">
+            <input id="modelFilter" oninput="filterModels()" type="text" placeholder="Filter models..."
+              class="w-full text-[12px] bg-surface border border-slate-700 rounded-md py-1.5 pl-7 pr-2 focus:border-primary outline-none text-slate-300"/>
+            <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" style="font-size:14px;">search</span>
+          </div>
+        </div>
+        <!-- Model table -->
+        <div class="flex-1 overflow-y-auto">
+          <table class="w-full text-[13px]" id="modelLibraryTable">
+            <thead class="sticky top-0 bg-surface z-10 border-b border-border-dark">
+              <tr class="text-left text-slate-500 uppercase" style="font-size:10px;">
+                <th class="px-3 py-2 cursor-pointer hover:text-primary" onclick="sortModels('name')">
+                  <span class="flex items-center gap-1">Name <span id="sort-name" class="opacity-40">&#8693;</span></span>
+                </th>
+                <th class="px-2 py-2 cursor-pointer hover:text-primary" onclick="sortModels('size')">
+                  <span class="flex items-center gap-1">Size <span id="sort-size" class="opacity-40">&#8693;</span></span>
+                </th>
+                <th class="px-2 py-2 cursor-pointer hover:text-primary" onclick="sortModels('quant')" title="Quantization">
+                  <span class="flex items-center gap-1">Q <span id="sort-quant" class="opacity-40">&#8693;</span></span>
+                </th>
+                <th class="px-1 py-2 text-[9px]" title="Fitness">Fit</th>
+              </tr>
+            </thead>
+            <tbody id="modelLibraryBody" class="divide-y divide-slate-800/50">
+              <tr><td colspan="4" class="px-3 py-6 text-slate-500 text-center text-[12px]">
+                <div class="flex flex-col items-center gap-2">
+                  <span class="material-symbols-outlined" style="font-size:28px;opacity:0.2;">database</span>
+                  <span class="font-semibold">No models found</span>
+                  <span class="text-[11px] text-slate-600">Start the backend with <code class="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-primary">Run_me.bat</code> or <button onclick="openDownloadModal()" class="text-primary font-bold hover:underline">download models</button></span>
+                </div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-3 py-2 border-t border-border-dark flex items-center gap-2">
+          <button onclick="openDownloadModal()" class="eval-btn eval-btn-primary text-[11px]">
+            <span class="material-symbols-outlined mr-1" style="font-size:13px;vertical-align:-2px;">download</span>Download Models
+          </button>
+        </div>
+      </div>
+
+      <!-- Right column: API Keys + Online -->
+      <div class="flex flex-col gap-4">
+        <!-- API Keys -->
+        <div class="card">
+          <div class="card-header">
+            <div class="flex items-center gap-1.5">
+              <span class="material-symbols-outlined" style="font-size:12px;">key</span>
+              API KEYS
+            </div>
+          </div>
+          <div class="p-4 space-y-3">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">OpenAI</label>
+              <input id="openaiKey" type="password" placeholder="sk-..."
+                class="eval-input text-[12px]"/>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">Anthropic</label>
+              <input id="claudeKey" type="password" placeholder="sk-ant-..."
+                class="eval-input text-[12px]"/>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-500 mb-1">Google AI</label>
+              <input id="googleKey" type="password" placeholder="AIzaSy..."
+                class="eval-input text-[12px]"/>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="saveOnlineKeys()" class="eval-btn eval-btn-primary flex-1 text-[11px]">Save Keys</button>
+              <button onclick="clearOnlineKeys()" class="eval-btn eval-btn-secondary text-[11px]">Clear</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Online Models -->
+        <div class="card flex-1">
+          <div class="card-header">
+            <div class="flex items-center gap-1.5">
+              <span class="material-symbols-outlined" style="font-size:12px;">cloud</span>
+              ONLINE MODELS
+            </div>
+          </div>
+          <div id="onlineModelsGrid" class="divide-y divide-slate-800/50 max-h-64 overflow-y-auto"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ──── TAB: LEADERBOARD ──── -->
+<div id="tab-leaderboard" class="tab-content">
+  <div class="flex-1 overflow-auto p-4">
+    <div class="card">
+      <div class="card-header">
+        <div class="flex items-center gap-3">
+          <span>LEADERBOARD</span>
+          <button onclick="_toggleHistoryView()" id="histToggleBtn" class="text-primary hover:text-primary/80 text-[10px] font-bold uppercase">Show History</button>
+        </div>
+        <button onclick="_clearHistory()" class="text-[10px] text-slate-500 hover:text-red-400 font-bold">CLEAR</button>
+      </div>
+      <div id="leaderboardWrap" class="overflow-x-auto">
+        <table class="w-full text-left text-[13px]">
+          <thead class="bg-surface sticky top-0 z-10 border-b border-border-dark">
+            <tr class="text-slate-500 uppercase tracking-wider" style="font-size:11px;">
+              <th class="px-4 py-2.5">#</th>
+              <th class="px-4 py-2.5">Model</th>
+              <th class="px-4 py-2.5">ELO</th>
+              <th class="px-4 py-2.5">Wins</th>
+              <th class="px-4 py-2.5">Losses</th>
+              <th class="px-4 py-2.5">Draws</th>
+              <th class="px-4 py-2.5">Games</th>
+              <th class="px-4 py-2.5">Avg Score</th>
+              <th class="px-4 py-2.5">Avg t/s</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody" class="divide-y divide-slate-800"></tbody>
+        </table>
+      </div>
+      <div id="historyWrap" class="hidden max-h-60 overflow-y-auto">
+        <div id="historyList" class="p-3 space-y-2 text-[11px]"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ──── TAB: EVAL STUDIO ──── -->
+<div id="tab-eval" class="tab-content">
+  <div class="flex-1 overflow-auto p-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+      <!-- Prompt Versioning -->
+      <div class="eval-card">
+        <div class="eval-card-header">
+          <span>Prompt Registry</span>
+          <button onclick="_evalRefreshPrompts()" class="text-primary text-[10px] font-bold hover:text-primary/80">Refresh</button>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <input id="evalPromptName" type="text" placeholder="Prompt name" class="eval-input text-[12px]"/>
+            <input id="evalPromptCommit" type="text" placeholder="Commit message" class="eval-input text-[12px]"/>
+          </div>
+          <textarea id="evalPromptTemplate" rows="3" class="eval-input text-[12px] resize-y font-mono" placeholder="Template text... use {{variable}} for placeholders"></textarea>
+          <textarea id="evalPromptSystem" rows="1" class="eval-input text-[12px] resize-y font-mono" placeholder="System prompt (optional)"></textarea>
+          <div class="flex items-center gap-2">
+            <button onclick="_evalRegisterPrompt()" class="eval-btn eval-btn-primary">Register Version</button>
+            <div class="flex items-center gap-2 ml-auto">
+              <input id="evalAliasName" type="text" placeholder="Alias name" class="eval-input text-[12px] w-28"/>
+              <input id="evalAliasVersion" type="number" placeholder="v#" class="eval-input text-[12px] w-16"/>
+              <button onclick="_evalSetAlias()" class="eval-btn eval-btn-secondary">Set Alias</button>
+            </div>
+          </div>
+          <div id="evalPromptsList" class="mt-2 max-h-48 overflow-y-auto space-y-1 text-[12px]">
+            <p class="text-slate-500 text-center py-3">No prompts yet</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Judge Feedback / Alignment -->
+      <div class="eval-card">
+        <div class="eval-card-header">
+          <span>Judge Alignment</span>
+          <button onclick="_evalRefreshFeedback()" class="text-primary text-[10px] font-bold hover:text-primary/80">Refresh</button>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <select id="evalFeedbackJudge" class="eval-input text-[12px]">
+              <option value="medical">Medical</option>
+              <option value="general" selected>General</option>
+              <option value="coding">Coding</option>
+              <option value="reasoning">Reasoning</option>
+            </select>
+            <div class="flex gap-2">
+              <input id="evalAutoScore" type="number" step="0.5" min="0" max="10" placeholder="Auto" class="eval-input text-[12px] flex-1"/>
+              <input id="evalHumanScore" type="number" step="0.5" min="0" max="10" placeholder="Human" class="eval-input text-[12px] flex-1"/>
+            </div>
+          </div>
+          <input id="evalFeedbackPrompt" type="text" placeholder="Prompt used" class="eval-input text-[12px]"/>
+          <input id="evalFeedbackResponse" type="text" placeholder="Response received" class="eval-input text-[12px]"/>
+          <textarea id="evalFeedbackNote" rows="1" class="eval-input text-[12px] resize-y" placeholder="Notes (optional)"></textarea>
+          <button onclick="_evalRecordFeedback()" class="eval-btn eval-btn-primary">Record Feedback</button>
+          <div id="evalAlignmentStats" class="mt-2 p-3 rounded-md bg-surface border border-slate-700">
+            <p class="text-[11px] text-slate-500 text-center">Select a judge and click Refresh to see alignment stats</p>
+          </div>
+          <div id="evalFeedbackList" class="max-h-32 overflow-y-auto space-y-1 text-[12px]"></div>
+        </div>
+      </div>
+
+      <!-- Gateway Routes -->
+      <div class="eval-card">
+        <div class="eval-card-header">
+          <span>Model Gateway</span>
+          <button onclick="_evalRefreshGateway()" class="text-primary text-[10px] font-bold hover:text-primary/80">Refresh</button>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="grid grid-cols-3 gap-2">
+            <input id="evalRouteName" type="text" placeholder="Route name" class="eval-input text-[12px]"/>
+            <select id="evalRouteStrategy" class="eval-input text-[12px]">
+              <option value="round_robin">Round Robin</option>
+              <option value="weighted">Weighted</option>
+              <option value="fallback">Fallback</option>
+              <option value="ab_test">A/B Test</option>
+            </select>
+            <input id="evalRouteModels" type="text" placeholder="model1.gguf, model2.gguf" class="eval-input text-[12px]"/>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="_evalAddRoute()" class="eval-btn eval-btn-primary">Add Route</button>
+            <div class="flex items-center gap-2 ml-auto">
+              <input id="evalResolveName" type="text" placeholder="Route to resolve" class="eval-input text-[12px] w-40"/>
+              <button onclick="_evalResolve()" class="eval-btn eval-btn-secondary">Resolve</button>
+              <span id="evalResolveResult" class="text-[12px] text-primary font-bold"></span>
+            </div>
+          </div>
+          <div id="evalGatewayRoutes" class="mt-2 max-h-48 overflow-y-auto space-y-1 text-[12px]">
+            <p class="text-slate-500 text-center py-3">No routes configured</p>
+          </div>
+          <div id="evalGatewayStats" class="mt-2 p-3 rounded-md bg-surface border border-slate-700 hidden"></div>
+        </div>
+      </div>
+
+      <!-- Conversation Judge -->
+      <div class="eval-card">
+        <div class="eval-card-header">
+          <span>Conversation Judges</span>
+        </div>
+        <div class="p-4 space-y-3">
+          <p class="text-[12px] text-slate-400">Judge multi-turn conversations for frustration and knowledge retention.</p>
+          <select id="evalConvJudge" class="eval-input text-[12px]">
+            <option value="frustration">User Frustration</option>
+            <option value="retention">Knowledge Retention</option>
+          </select>
+          <textarea id="evalConvTurns" rows="5" class="eval-input text-[12px] resize-y font-mono" placeholder='Enter turns as JSON array:
+[
+  {"role":"user","content":"My name is Alice"},
+  {"role":"assistant","content":"Hi Alice!"},
+  {"role":"user","content":"What is my name?"},
+  {"role":"assistant","content":"Your name is Alice."}
+]'></textarea>
+          <div class="flex items-center gap-2">
+            <button onclick="_evalJudgeConversation()" class="eval-btn eval-btn-primary">Judge</button>
+            <span id="evalConvResult" class="text-[12px] text-slate-400"></span>
+          </div>
+          <div id="evalConvDetail" class="hidden p-3 rounded-md bg-surface border border-slate-700 text-[12px] font-mono overflow-auto max-h-40"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</div><!-- /main content -->
+
+<!-- ═══════════ ZENA CHAT BAR ═══════════ -->
+<div class="shrink-0 px-3 py-2 border-t border-border-dark bg-neutral-dark">
+  <div id="zenaChatBar" onclick="_zenaFocusOrOpen(event)">
+    <img src="zena_256x256.png" alt="Zena" class="shrink-0" style="width:22px;height:22px;border-radius:50%;object-fit:cover;border:1.5px solid #6366f1;" onerror="this.onerror=null;this.src=typeof _ZENA_B64!=='undefined'?_ZENA_B64:''">
+    <input id="zenaChatInput" type="text" autocomplete="off" maxlength="1000"
+           placeholder="Ask Zena anything..."
+           onkeydown="if(event.key==='Enter'){event.preventDefault();sendZenaMsg();}">
+    <select id="zenaChatModelSel" onchange="_updateZenaChatLabel()" title="Zena model"
+            style="max-width:130px;font-size:11px;border:none;background:transparent;outline:none;cursor:pointer;color:#64748b;" onclick="event.stopPropagation()">
+      <option value="">auto</option>
+    </select>
+    <span id="zenaChatThinking" style="display:none;font-size:11px;color:#6366f1;font-weight:700;">thinking...</span>
+    <button class="zbtn" onclick="event.stopPropagation();openZenaOverlay()" title="Open chat">
+      <span class="material-symbols-outlined" style="font-size:14px;">open_in_new</span>
+    </button>
+    <button id="zenaChatSendBtn" class="zbtn send" onclick="event.stopPropagation();sendZenaMsg()" title="Send">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+  <div id="zenaChatModelLabel" style="font-size:10px;color:#64748b;margin-top:2px;padding-left:2px;"></div>
+</div>
+
+<!-- ═══════════ ZENA OVERLAY ═══════════ -->
+<div id="zenaChatOverlay" onclick="_zenaOverlayBgClick(event)">
+  <div id="zenaChatPanel">
+    <div id="zOvHdr">
+      <img src="zena_256x256.png" alt="Zena" style="width:26px;height:26px;border-radius:50%;object-fit:cover;border:2px solid #6366f1;flex-shrink:0;" onerror="this.onerror=null;this.src=typeof _ZENA_B64!=='undefined'?_ZENA_B64:''">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;color:#6366f1;">Zena AI Assistant</div>
+        <div id="zOvModelLabel" style="font-size:10px;color:#94a3b8;"></div>
+      </div>
+      <select id="zOvModelSel" onchange="_zOvModelChange()" title="Model"
+              style="font-size:11px;border:1px solid #334155;border-radius:6px;padding:3px 6px;outline:none;background:#111827;color:#94a3b8;cursor:pointer;max-width:160px;">
+        <option value="">auto</option>
+      </select>
+      <button onclick="closeZenaOverlay()" style="width:26px;height:26px;border-radius:50%;border:1px solid #334155;background:#111827;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;" title="Close">
+        <span class="material-symbols-outlined" style="font-size:15px;">close</span>
+      </button>
+    </div>
+    <div id="zOvMsgs">
+      <div class="chat-msg-assistant" style="white-space:pre-wrap;">Hi! I'm <strong>Zena</strong>. Ask me anything about this app.</div>
+    </div>
+    <div id="zOvFoot">
+      <textarea id="zOvInput" rows="1" placeholder="Ask anything... Enter to send"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendZenaMsg();}"
+                oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,96)+'px'"></textarea>
+      <span id="zOvThinking" style="display:none;font-size:11px;color:#6366f1;font-weight:700;">thinking...</span>
+      <button id="zOvSendBtn" onclick="sendZenaMsg()" style="width:32px;height:32px;border-radius:8px;background:#6366f1;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;" title="Send">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer class="h-7 shrink-0 border-t border-border-dark bg-background-dark flex items-center justify-between px-4 z-40">
+  <div class="flex items-center gap-4 text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+    <span id="footerSpeed">Backend: ---</span>
+    <span id="footerDisk">Models: ---</span>
+    <div class="flex items-center gap-1" id="llamaStatusFooter">
+      <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+      <span id="footerLlama">llama.cpp: ---</span>
+    </div>
+  </div>
+  <span class="text-[10px] font-mono text-slate-600">LLM Compare 2025</span>
+</footer>
+
+<!-- ═══════════ FLOATING CHAT PANEL ═══════════ -->
+<div id="chatPanel" class="hidden fixed bottom-8 right-4 w-[400px] max-w-[95vw] z-50 flex flex-col rounded-xl border border-border-dark shadow-2xl bg-background-dark overflow-hidden" style="max-height:480px;">
+  <div class="flex items-center justify-between px-4 py-2.5 bg-primary text-white shrink-0">
+    <div class="flex items-center gap-2 font-bold text-[13px]">
+      <img src="zena_256x256.png" alt="Zena" style="width:20px;height:20px;border-radius:50%;object-fit:cover;" onerror="this.onerror=null;this.src=typeof _ZENA_B64!=='undefined'?_ZENA_B64:''">
+      Zena
+    </div>
+    <button onclick="toggleChat()" class="opacity-70 hover:opacity-100">
+      <span class="material-symbols-outlined" style="font-size:18px;">close</span>
+    </button>
+  </div>
+  <div id="chatMessages" class="flex-1 overflow-y-auto p-3 flex flex-col gap-2 text-[13px]" style="min-height:200px;max-height:320px;">
+    <div class="chat-msg-assistant">Ask me anything about this app.</div>
+  </div>
+  <div class="px-3 py-1.5 border-t border-border-dark flex items-center gap-2 shrink-0">
+    <span class="text-[10px] text-slate-500 font-semibold">Model:</span>
+    <select id="chatModelSelect" class="flex-1 text-[11px] bg-surface border border-slate-700 rounded px-2 py-0.5 outline-none text-slate-300">
+      <option value="">pick a local model</option>
+    </select>
+    <span id="chatThinking" class="hidden text-[10px] text-primary animate-pulse font-semibold">thinking...</span>
+  </div>
+  <div class="flex gap-2 p-2.5 border-t border-border-dark shrink-0">
+    <textarea id="chatInput" rows="2" placeholder="Ask anything..."
+      class="flex-1 text-[13px] bg-surface border border-slate-700 rounded-lg px-3 py-1.5 resize-none outline-none focus:border-primary text-slate-200"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg();}"></textarea>
+    <button onclick="sendChatMsg()"
+      class="px-3 py-1.5 bg-primary text-white rounded-lg font-bold text-[12px] hover:bg-indigo-600 self-end">
+      <span class="material-symbols-outlined" style="font-size:16px;">send</span>
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════ DOWNLOAD MODAL ═══════════ -->
+<div class="dl-modal items-center justify-center" id="downloadModal">
+  <div class="dl-modal-overlay" onclick="closeDownloadModal()"></div>
+  <div class="dl-modal-box">
+    <!-- Overwrite overlay -->
+    <div id="owOverlay" class="ow-overlay hidden">
+      <div class="ow-box bg-slate-900 border border-slate-700 shadow-2xl">
+        <div class="px-5 py-4 border-b border-slate-700 flex items-center gap-2 bg-amber-900/20">
+          <span class="material-symbols-outlined text-amber-500" style="font-size:20px;">warning</span>
+          <h3 class="font-bold text-base">File Already Exists</h3>
+        </div>
+        <div class="p-5 space-y-3">
+          <p class="text-sm text-slate-300">This model already exists locally.</p>
+          <div id="owExistingInfo" class="rounded-lg bg-slate-800 p-3 space-y-1 border border-slate-700 text-sm"></div>
+          <div id="owNewInfo" class="rounded-lg bg-primary/5 border border-primary/20 p-3 space-y-1 text-sm"></div>
+        </div>
+        <div class="px-5 pb-5 flex items-center justify-end gap-3">
+          <button onclick="cancelOverwrite()" class="px-4 py-2 text-sm font-bold rounded border border-slate-600 text-slate-300 hover:bg-slate-800">Keep Existing</button>
+          <button onclick="doOverwrite()" class="px-4 py-2 text-sm font-bold rounded bg-amber-600 text-white hover:bg-amber-500 flex items-center gap-2">Overwrite</button>
+        </div>
+      </div>
+    </div>
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-3.5 border-b border-border-dark shrink-0">
+      <h2 class="font-bold text-base flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary" style="font-size:18px;">download</span>
+        Downloads &amp; Model Library
+      </h2>
+      <button onclick="closeDownloadModal()" class="text-slate-400 hover:text-slate-200">
+        <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      </button>
+    </div>
+    <!-- Destination bar -->
+    <div class="dest-bar shrink-0">
+      <span class="material-symbols-outlined text-primary" style="font-size:22px;">folder_open</span>
+      <span class="text-sm font-bold text-slate-200 shrink-0">Save to:</span>
+      <code id="destPathDisplay" class="flex-1 truncate">C:\AI\Models</code>
+      <button id="destEditBtn" onclick="editDest()" class="text-primary text-xs font-bold px-2 py-1 rounded hover:bg-primary/10 shrink-0">Change</button>
+      <input id="destPathInput" type="text" class="hidden flex-1 bg-slate-800 border border-primary rounded text-sm px-2 py-0.5 outline-none text-slate-200" value="C:\AI\Models" onblur="confirmDest()" onkeydown="if(event.key==='Enter')confirmDest()"/>
+    </div>
+    <!-- llama banner -->
+    <div id="llamaBanner" class="hidden mx-6 mt-3 rounded-lg shrink-0 overflow-hidden" style="border:1px solid #4f46e5;background:#1e1b3a;">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <div class="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
+          <span class="material-symbols-outlined text-primary" style="font-size:20px;">model_training</span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-[12px] font-bold text-slate-100">llama.cpp not detected</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Required to run models locally. Optimized for <span id="llamaBuildHint" class="text-indigo-300 font-semibold">CPU</span></div>
+        </div>
+        <button onclick="openLlamaInstall()" class="shrink-0 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold hover:bg-primary/80">Install</button>
+      </div>
+    </div>
+    <!-- Active downloads -->
+    <div class="mx-6 mt-3 shrink-0">
+      <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Active Downloads</p>
+      <div id="activeDownloadsList" class="space-y-2 overflow-y-auto" style="max-height:130px;"></div>
+    </div>
+    <!-- Browser -->
+    <div class="flex-1 overflow-y-auto px-6 pb-3 border-t border-border-dark mt-3 min-h-0">
+      <div class="flex items-center justify-between py-3 gap-3 flex-wrap">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500 shrink-0">Browse &amp; Add Model</p>
+        <div class="flex gap-1.5 flex-wrap">
+          <button onclick="switchRepo('hf',this)" class="repo-tab-btn active-tab px-3 py-1 rounded text-[11px] font-bold border border-primary bg-primary/10 text-primary">HuggingFace</button>
+          <button onclick="switchRepo('discover',this)" class="repo-tab-btn px-3 py-1 rounded text-[11px] font-bold border border-slate-700 text-slate-400 hover:border-primary hover:text-primary">Discover</button>
+          <button onclick="switchRepo('ms',this)" class="repo-tab-btn px-3 py-1 rounded text-[11px] font-bold border border-slate-700 text-slate-400 hover:border-primary hover:text-primary">ModelScope</button>
+        </div>
+      </div>
+      <!-- HF catalog -->
+      <div id="repo-hf" class="repo-section">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <div class="flex gap-1.5 flex-wrap flex-1">
+            <button onclick="setCatFilter('all',this)" class="cat-fb active-cat px-2.5 py-1 rounded-full text-[11px] font-bold bg-primary text-white border border-primary">All</button>
+            <button onclick="setCatFilter('chat',this)" class="cat-fb px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-400 border border-slate-700 hover:border-primary hover:text-primary">Chat</button>
+            <button onclick="setCatFilter('code',this)" class="cat-fb px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-400 border border-slate-700 hover:border-primary hover:text-primary">Code</button>
+            <button onclick="setCatFilter('reasoning',this)" class="cat-fb px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-400 border border-slate-700 hover:border-primary hover:text-primary">Reasoning</button>
+            <button onclick="setCatFilter('fast',this)" class="cat-fb px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-400 border border-slate-700 hover:border-primary hover:text-primary">Fast</button>
+            <button onclick="setCatFilter('multilingual',this)" class="cat-fb px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-400 border border-slate-700 hover:border-primary hover:text-primary">Multilingual</button>
+          </div>
+          <select id="catalogSort" onchange="renderCatalog()" class="text-[11px] bg-surface border border-slate-700 rounded px-2 py-1 outline-none text-slate-300 shrink-0">
+            <option value="downloads">Most Downloaded</option>
+            <option value="newest">Newest First</option>
+            <option value="size_asc">Smallest First</option>
+            <option value="size_desc">Largest First</option>
+            <option value="az">A-Z</option>
+          </select>
+        </div>
+        <div class="catalog-grid" id="catalogGrid">
+          <div class="col-span-2 flex items-center justify-center gap-3 py-8 text-slate-400 text-sm"><div class="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div><span>Loading catalog...</span></div>
+        </div>
+        <div class="mt-3 pt-3 border-t border-slate-700">
+          <p class="text-[10px] text-slate-500 font-bold uppercase mb-1.5">Or enter a direct HuggingFace path</p>
+          <input id="hfCustom" type="text" placeholder="owner/repo/file.gguf"
+            class="w-full bg-surface border border-slate-700 rounded text-[12px] px-3 py-1.5 focus:border-primary outline-none text-slate-300"
+            oninput="_selectedCatalogModel=null;updateSelectedDisplay()"/>
+        </div>
+      </div>
+      <!-- Discover -->
+      <div id="repo-discover" class="repo-section hidden">
+        <div class="flex items-center gap-2 mb-3">
+          <input id="discoverSearch" type="text" placeholder="Search HuggingFace for GGUF models..."
+            class="flex-1 bg-surface border border-slate-700 rounded text-[12px] px-3 py-1.5 focus:border-primary outline-none text-slate-300"
+            onkeydown="if(event.key==='Enter')runDiscoverSearch()"/>
+          <select id="discoverSort" class="text-[11px] bg-surface border border-slate-700 rounded px-2 py-1 outline-none text-slate-300 shrink-0">
+            <option value="trending">Trending</option>
+            <option value="downloads">Most Downloaded</option>
+            <option value="newest">Newest</option>
+            <option value="likes">Most Liked</option>
+          </select>
+          <button onclick="runDiscoverSearch()" class="px-3 py-1.5 text-[11px] font-bold rounded bg-primary text-white hover:bg-primary/90">Search</button>
+        </div>
+        <div id="discoverGrid" class="catalog-grid">
+          <div class="col-span-2 flex items-center justify-center gap-3 py-8 text-slate-400 text-sm"><div class="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div><span>Loading...</span></div>
+        </div>
+      </div>
+      <!-- ModelScope -->
+      <div id="repo-ms" class="repo-section hidden">
+        <input id="msModel" type="text" placeholder="baichuan-inc/Baichuan2-7B"
+          class="w-full bg-surface border border-slate-700 rounded text-[12px] px-3 py-2 focus:border-primary outline-none text-slate-300"/>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-3 border-t border-border-dark shrink-0">
+      <div id="selectedModelDisplay" class="flex items-center gap-2 text-sm text-slate-400 min-w-0">
+        <span class="material-symbols-outlined text-slate-600 shrink-0" style="font-size:16px;">info</span>
+        <span class="truncate text-[12px]">Select a model card above to download</span>
+      </div>
+      <div class="flex gap-2 shrink-0 ml-3">
+        <button onclick="closeDownloadModal()" class="px-4 py-1.5 text-[11px] font-bold rounded border border-slate-700 text-slate-400 hover:bg-slate-800">Cancel</button>
+        <button id="startDlBtn" onclick="startDownload()" class="px-4 py-1.5 text-[11px] font-bold rounded bg-primary text-white hover:bg-primary/90 flex items-center gap-1.5">
+          <span class="material-symbols-outlined" style="font-size:13px;">download</span> Download
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ LLAMA INSTALL MODAL ═══════════ -->
+<div id="llamaInstallModal" class="dl-modal items-center justify-center" style="z-index:10000;">
+  <div class="dl-modal-overlay" onclick="closeLlamaInstall()"></div>
+  <div class="dl-modal-box" style="max-width:580px;">
+    <div class="flex items-center justify-between px-6 py-3.5 border-b border-border-dark shrink-0">
+      <h2 class="font-bold text-base flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary" style="font-size:18px;">model_training</span>
+        Install llama.cpp
+      </h2>
+      <button onclick="closeLlamaInstall()" class="text-slate-400 hover:text-slate-200">
+        <span class="material-symbols-outlined" style="font-size:20px;">close</span>
+      </button>
+    </div>
+    <div class="px-6 py-4 space-y-3 shrink-0">
+      <div class="rounded-lg border border-slate-700 p-4 bg-surface">
+        <div class="flex items-center gap-3 mb-2.5">
+          <div class="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center bg-primary/10">
+            <span class="material-symbols-outlined text-primary" style="font-size:18px;">memory</span>
+          </div>
+          <div>
+            <div class="font-bold text-sm" id="llamaBuildName">Detecting...</div>
+            <div class="text-[11px] text-slate-400 mt-0.5" id="llamaBuildReason">Checking hardware...</div>
+          </div>
+        </div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">
+          <strong>llama-cpp-python</strong> &mdash; local inference engine for GGUF models. Compiles with your hardware optimizations.
+        </p>
+      </div>
+      <div id="llamaInstallIdle" style="display:flex;" class="items-center justify-between gap-3">
+        <p class="text-[11px] text-slate-500">Typically 2-5 min.</p>
+        <button onclick="startLlamaInstall()" class="px-4 py-2 rounded-lg bg-primary text-white text-[12px] font-bold hover:bg-primary/80 flex items-center gap-2 shrink-0">
+          <span class="material-symbols-outlined" style="font-size:14px;">download</span> Install Now
+        </button>
+      </div>
+      <div id="llamaInstallRunning" style="display:none;" class="items-center gap-3">
+        <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0"></div>
+        <span class="text-[12px] font-semibold text-slate-300" id="llamaInstallStatusText">Installing...</span>
+      </div>
+      <div id="llamaInstallDone" style="display:none;" class="items-center gap-3">
+        <span class="material-symbols-outlined text-emerald-500" style="font-size:22px;">check_circle</span>
+        <span class="text-[13px] font-bold text-emerald-500">Installed!</span>
+        <button onclick="closeLlamaInstall();checkSystemStatus();" class="ml-auto px-3 py-1.5 rounded border border-emerald-500 text-emerald-500 text-[11px] font-bold hover:bg-emerald-500/10">Done</button>
+      </div>
+      <div id="llamaInstallError" style="display:none;" class="items-center gap-3 p-3 rounded-lg bg-red-900/10 border border-red-800/30">
+        <span class="material-symbols-outlined text-red-400 shrink-0" style="font-size:18px;">error</span>
+        <div class="flex-1">
+          <p class="text-[12px] font-bold text-red-300">Installation failed</p>
+          <p class="text-[10px] text-red-400/70 mt-0.5" id="llamaInstallErrMsg">See log below.</p>
+        </div>
+        <button onclick="startLlamaInstall()" class="shrink-0 px-3 py-1.5 rounded border border-red-600 text-red-400 text-[11px] font-bold hover:bg-red-500/10">Retry</button>
+      </div>
+    </div>
+    <div class="mx-6 mb-5 shrink-0">
+      <div id="llamaInstallLogWrap" class="hidden rounded-lg overflow-hidden border border-slate-700">
+        <div class="flex items-center justify-between px-3 py-1.5 bg-slate-800 border-b border-slate-700">
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Install Log</span>
+          <button onclick="document.getElementById('llamaInstallLog').textContent=''" class="text-[10px] text-slate-500 hover:text-slate-300">clear</button>
+        </div>
+        <div id="llamaInstallLog" class="bg-black/80 font-mono text-[10px] text-green-400 p-3 overflow-y-auto leading-relaxed" style="max-height:200px;white-space:pre-wrap;word-break:break-all;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ SKILL LAB TAB ═══════════ -->
+<div id="tab-skilllab" class="tab-content">
+
+<style>
+  /* ── Card Engine tokens (ZenAIos Display Card system) ── */
+  #tab-skilllab .sl-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; max-width: 1100px; margin: 0 auto; padding: 12px; }
+  #tab-skilllab .sl-col-12 { grid-column: span 12; }
+  #tab-skilllab .sl-col-8  { grid-column: span 8; }
+  #tab-skilllab .sl-col-6  { grid-column: span 6; }
+  #tab-skilllab .sl-col-4  { grid-column: span 4; }
+  #tab-skilllab .sl-col-3  { grid-column: span 3; }
+  @media (max-width: 768px) { #tab-skilllab .sl-col-8, #tab-skilllab .sl-col-6, #tab-skilllab .sl-col-4, #tab-skilllab .sl-col-3 { grid-column: span 12; } }
+
+  #tab-skilllab .card-shell {
+    background: #1a1d27;
+    border: 1px solid #2d3143;
+    border-radius: 10px;
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  #tab-skilllab .card-shell:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  /* Disable hover lift for nested cards (scenarios/evals/log entries) */
+  #tab-skilllab .card-body .card-shell:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  #tab-skilllab .card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #2d3143;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8b8fa3;
+  }
+  #tab-skilllab .card-header .card-icon {
+    font-size: 16px;
+    opacity: 0.8;
+  }
+  #tab-skilllab .card-header .card-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.05);
+    color: #94a3b8;
+  }
+  #tab-skilllab .card-body { padding: 14px; }
+
+  /* Category tints — border-top accent bar (ZenAIos pattern) */
+  #tab-skilllab .tint-action  { border-top: 3px solid #ec4899; }
+  #tab-skilllab .tint-action  .card-header .card-icon { color: #ec4899; }
+  #tab-skilllab .tint-display { border-top: 3px solid #3b82f6; }
+  #tab-skilllab .tint-display .card-header .card-icon { color: #3b82f6; }
+  #tab-skilllab .tint-info    { border-top: 3px solid #06b6d4; }
+  #tab-skilllab .tint-info    .card-header .card-icon { color: #06b6d4; }
+  #tab-skilllab .tint-chart   { border-top: 3px solid #8b5cf6; }
+  #tab-skilllab .tint-chart   .card-header .card-icon { color: #8b5cf6; }
+  #tab-skilllab .tint-status  { border-top: 3px solid #f97316; }
+  #tab-skilllab .tint-status  .card-header .card-icon { color: #f97316; }
+  #tab-skilllab .tint-success { border-top: 3px solid #34d399; }
+  #tab-skilllab .tint-success .card-header .card-icon { color: #34d399; }
+
+  /* KPI card */
+  #tab-skilllab .kpi-value { font-size: 24px; font-weight: 700; line-height: 1.1; margin-top: 4px; }
+  #tab-skilllab .kpi-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Step indicator */
+  #tab-skilllab .sl-steps { display: flex; align-items: center; gap: 6px; padding: 8px 14px; }
+  #tab-skilllab .sl-step-pill { font-size: 11px; color: #5a5e72; padding: 4px 12px; border-radius: 20px; transition: all 0.2s; cursor: default; display: flex; align-items: center; gap: 4px; }
+  #tab-skilllab .sl-step-pill.active { color: #3b82f6; background: rgba(59,130,246,0.12); font-weight: 600; }
+  #tab-skilllab .sl-step-pill.done { color: #22c55e; }
+  #tab-skilllab .sl-step-pill .step-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  #tab-skilllab .sl-step-line { width: 24px; height: 1px; background: #2d3143; }
+
+  /* Upload drop zone */
+  #tab-skilllab .sl-dropzone {
+    border: 2px dashed #2d3143;
+    border-radius: 10px;
+    padding: 32px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  #tab-skilllab .sl-dropzone:hover, #tab-skilllab .sl-dropzone.dragover {
+    border-color: #3b82f6;
+    background: rgba(59,130,246,0.04);
+  }
+
+  /* Panel transitions */
+  #tab-skilllab .sl-panel { transition: opacity 0.2s; }
+  #tab-skilllab .sl-panel.hidden { display: none; }
+
+  /* Diff tabs */
+  #tab-skilllab .sl-diff-tab { background: transparent; color: #64748b; border: 1px solid #2d3143; cursor: pointer; font-size: 10px; padding: 3px 10px; border-radius: 6px; transition: all 0.15s; }
+  #tab-skilllab .sl-diff-tab.active { background: rgba(59,130,246,0.12); color: #3b82f6; border-color: #3b82f6; }
+
+  /* Bar chart */
+  #tab-skilllab .sl-bar { transition: height 0.3s ease; border-radius: 3px 3px 0 0; min-height: 3px; }
+
+  /* Example pill */
+  #tab-skilllab .sl-example-btn {
+    font-size: 10px; padding: 4px 10px; border-radius: 8px;
+    background: #1a1d27; border: 1px solid #2d3143;
+    color: #94a3b8; cursor: pointer; transition: all 0.15s;
+  }
+  #tab-skilllab .sl-example-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+
+  /* Form inputs */
+  #tab-skilllab .sl-input {
+    width: 100%; font-size: 11px; background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(45,49,67,0.6); border-radius: 6px;
+    padding: 6px 10px; outline: none; color: #e1e4ed;
+    transition: border-color 0.15s;
+  }
+  #tab-skilllab .sl-input:focus { border-color: #3b82f6; }
+  #tab-skilllab .sl-input::placeholder { color: #5a5e72; }
+  #tab-skilllab textarea.sl-input { resize: vertical; }
+
+  /* Buttons (ZenAIos .card-btn pattern) */
+  #tab-skilllab .sl-btn {
+    font-size: 11px; padding: 6px 16px; border-radius: 8px;
+    cursor: pointer; display: inline-flex; align-items: center;
+    gap: 4px; transition: all 0.15s; border: 1px solid;
+  }
+  #tab-skilllab .sl-btn-primary {
+    background: rgba(59,130,246,0.12); color: #3b82f6;
+    border-color: rgba(59,130,246,0.25);
+  }
+  #tab-skilllab .sl-btn-primary:hover { background: rgba(59,130,246,0.2); }
+  #tab-skilllab .sl-btn-success {
+    background: rgba(34,197,94,0.12); color: #22c55e;
+    border-color: rgba(34,197,94,0.25);
+  }
+  #tab-skilllab .sl-btn-success:hover { background: rgba(34,197,94,0.2); }
+  #tab-skilllab .sl-btn-ghost {
+    background: transparent; color: #8b8fa3;
+    border-color: #2d3143;
+  }
+  #tab-skilllab .sl-btn-ghost:hover { color: #3b82f6; border-color: #3b82f6; }
+  #tab-skilllab .sl-btn-danger {
+    background: rgba(239,68,68,0.08); color: #ef4444;
+    border-color: rgba(239,68,68,0.2);
+  }
+  #tab-skilllab .sl-btn-danger:hover { background: rgba(239,68,68,0.15); }
+  #tab-skilllab .sl-btn-accent {
+    background: rgba(236,72,153,0.08); color: #ec4899;
+    border-color: rgba(236,72,153,0.2);
+  }
+  #tab-skilllab .sl-btn-accent:hover { background: rgba(236,72,153,0.15); }
+
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
+
+<div id="slRoot" class="sl-grid"></div>
+</div>
+
+<!-- Hidden panels for JS compat -->
+<div id="scoutPanel" style="display:none;"></div>
+<div id="matrixPanel" style="display:none;"></div>
+<div id="normalContent" style="display:none;"></div>
+
+<!-- ═══════════ JAVASCRIPT ═══════════ -->
+<script src="app.js"></script>
+<script>
+// ── Tab switching ──
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.nav-tab').forEach(function(el) { el.classList.remove('active'); });
+  var tab = document.getElementById('tab-' + tabId);
+  if (tab) tab.classList.add('active');
+  var btn = document.querySelector('.nav-tab[data-tab="' + tabId + '"]');
+  if (btn) btn.classList.add('active');
+}
+
+// ── Eval Studio: Prompt Registry ──
+async function _evalRefreshPrompts() {
+  try {
+    var res = await fetch(BACKEND + '/__prompts');
+    var data = await res.json();
+    var list = document.getElementById('evalPromptsList');
+    if (!data.prompts || data.prompts.length === 0) {
+      list.innerHTML = '<p class="text-slate-500 text-center py-3">No prompts yet</p>';
+      return;
+    }
+    var html = '';
+    data.prompts.forEach(function(p) {
+      html += '<div class="flex items-center justify-between p-2 rounded bg-surface border border-slate-700">' +
+        '<div><span class="font-semibold text-primary">' + escHtml(p.name) + '</span>' +
+        '<span class="text-slate-500 ml-2">' + (p.versions || p.latest_version || '?') + ' version(s)</span></div>' +
+        '<button onclick="_evalLoadPromptVersions(\'' + escHtml(p.name) + '\')" class="text-[11px] text-primary hover:text-primary/80 font-bold">View</button>' +
+      '</div>';
+    });
+    list.innerHTML = html;  <!-- xray: ignore[JS-SEC-001] -->
+  } catch (e) { toast('Failed to load prompts: ' + e.message, 'error'); }
+}
+
+async function _evalLoadPromptVersions(name) {
+  try {
+    var res = await fetch(BACKEND + '/__prompts?name=' + encodeURIComponent(name));
+    var data = await res.json();
+    var list = document.getElementById('evalPromptsList');
+    var html = '<div class="flex items-center gap-2 mb-2"><button onclick="_evalRefreshPrompts()" class="text-[11px] text-slate-400 hover:text-primary">&larr; Back</button><span class="font-bold text-primary">' + escHtml(name) + '</span></div>';
+    if (data.versions) {
+      data.versions.forEach(function(v) {
+        html += '<div class="p-2 rounded bg-surface border border-slate-700">' +
+          '<div class="flex items-center justify-between">' +
+          '<span class="text-slate-300">v' + v.version + '</span>' +
+          '<span class="text-[10px] text-slate-500">' + escHtml(v.commit_msg || '') + '</span>' +
+          '</div>' +
+          '<div class="text-[11px] text-slate-400 font-mono mt-1 truncate">' + escHtml(v.template || '') + '</div>' +
+        '</div>';
+      });
+    }
+    if (data.aliases) {
+      html += '<div class="mt-2 text-[11px] text-slate-500">Aliases: ' + data.aliases.map(function(a) { return '<span class="text-primary">' + escHtml(a.alias) + '</span> &rarr; v' + escHtml(String(a.version)); }).join(', ') + '</div>';
+    }
+    list.innerHTML = html;  <!-- xray: ignore[JS-SEC-001] -->
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function _evalRegisterPrompt() {
+  var name = document.getElementById('evalPromptName').value.trim();
+  var template = document.getElementById('evalPromptTemplate').value.trim();
+  if (!name || !template) { toast('Name and template required', 'warning'); return; }
+  try {
+    var body = {
+      name: name, template: template,
+      system_prompt: document.getElementById('evalPromptSystem').value.trim() || undefined,
+      commit_msg: document.getElementById('evalPromptCommit').value.trim() || undefined,
+    };
+    var res = await fetch(BACKEND + '/__prompts', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    var data = await res.json();
+    if (data.ok) { toast('Registered ' + name + ' v' + data.version, 'success'); _evalRefreshPrompts(); }
+    else toast(data.error || 'Failed', 'error');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function _evalSetAlias() {
+  var name = document.getElementById('evalPromptName').value.trim();
+  var alias = document.getElementById('evalAliasName').value.trim();
+  var version = parseInt(document.getElementById('evalAliasVersion').value);
+  if (!name || !alias || !version) { toast('Need prompt name, alias, and version', 'warning'); return; }
+  try {
+    var res = await fetch(BACKEND + '/__prompts/alias', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: name, alias: alias, version: version })
+    });
+    var data = await res.json();
+    if (data.ok) toast('Alias \'' + alias + '\' set to v' + version, 'success');
+    else toast(data.error || 'Failed', 'error');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ── Eval Studio: Judge Feedback ──
+async function _evalRefreshFeedback() {
+  var judge = document.getElementById('evalFeedbackJudge').value;
+  try {
+    var res = await fetch(BACKEND + '/__feedback?judge_name=' + encodeURIComponent(judge));
+    var data = await res.json();
+    var statsEl = document.getElementById('evalAlignmentStats');
+    if (data.stats) {
+      var s = data.stats;
+      statsEl.innerHTML = '<div class="grid grid-cols-4 gap-3 text-center">' +  <!-- xray: ignore[JS-SEC-001] -->
+        '<div><div class="text-[10px] text-slate-500 uppercase">Feedback</div><div class="text-lg font-bold text-primary">' + (s.total_feedback || 0) + '</div></div>' +
+        '<div><div class="text-[10px] text-slate-500 uppercase">Correlation</div><div class="text-lg font-bold ' + ((s.correlation||0) > 0.7 ? 'text-emerald-400' : 'text-amber-400') + '">' + (s.correlation != null ? s.correlation.toFixed(2) : '---') + '</div></div>' +
+        '<div><div class="text-[10px] text-slate-500 uppercase">Avg Bias</div><div class="text-lg font-bold text-slate-300">' + (s.avg_bias != null ? (s.avg_bias > 0 ? '+' : '') + s.avg_bias.toFixed(2) : '---') + '</div></div>' +
+        '<div><div class="text-[10px] text-slate-500 uppercase">Calibration</div><div class="text-lg font-bold text-slate-300">' + (s.calibration_offset != null ? (s.calibration_offset > 0 ? '+' : '') + s.calibration_offset.toFixed(2) : '---') + '</div></div>' +
+      '</div>';
+    }
+    var listEl = document.getElementById('evalFeedbackList');
+    if (data.history && data.history.length > 0) {
+      listEl.innerHTML = data.history.slice(0, 20).map(function(f) {
+        return '<div class="flex items-center gap-2 p-1.5 rounded bg-surface border border-slate-700">' +
+          '<span class="text-slate-300 truncate flex-1">' + escHtml(f.prompt || '').slice(0, 40) + '</span>' +
+          '<span class="text-primary font-bold">' + f.auto_score + '</span>' +
+          '<span class="text-slate-500">&rarr;</span>' +
+          '<span class="' + (f.human_score != null ? 'text-emerald-400' : 'text-slate-600') + ' font-bold">' + (f.human_score != null ? f.human_score : '?') + '</span>' +
+        '</div>';
+      }).join('');
+    }
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function _evalRecordFeedback() {
+  var judge = document.getElementById('evalFeedbackJudge').value;
+  var auto_score = parseFloat(document.getElementById('evalAutoScore').value);
+  var human_score = parseFloat(document.getElementById('evalHumanScore').value) || undefined;
+  var prompt = document.getElementById('evalFeedbackPrompt').value.trim();
+  var response = document.getElementById('evalFeedbackResponse').value.trim();
+  if (!prompt || isNaN(auto_score)) { toast('Prompt and auto score required', 'warning'); return; }
+  try {
+    var res = await fetch(BACKEND + '/__feedback', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ judge_name: judge, prompt: prompt, response: response, auto_score: auto_score, human_score: human_score, feedback: document.getElementById('evalFeedbackNote').value.trim() || undefined })
+    });
+    var data = await res.json();
+    if (data.ok) { toast('Feedback recorded', 'success'); _evalRefreshFeedback(); }
+    else toast(data.error || 'Failed', 'error');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ── Eval Studio: Gateway ──
+async function _evalRefreshGateway() {
+  try {
+    var routesRes = await fetch(BACKEND + '/__gateway/routes');
+    var statsRes = await fetch(BACKEND + '/__gateway/stats');
+    var routesData = await routesRes.json();
+    var statsData = await statsRes.json();
+    var el = document.getElementById('evalGatewayRoutes');
+    if (routesData.routes && routesData.routes.length > 0) {
+      el.innerHTML = routesData.routes.map(function(r) {
+        return '<div class="flex items-center gap-2 p-2 rounded bg-surface border border-slate-700">' +
+          '<span class="font-semibold text-primary">' + escHtml(r.name) + '</span>' +
+          '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">' + escHtml(r.strategy) + '</span>' +
+          '<span class="text-slate-500 text-[11px] flex-1 truncate">' + (r.models||[]).map(function(m) { return escHtml(m); }).join(', ') + '</span>' +
+        '</div>';
+      }).join('');
+    } else {
+      el.innerHTML = '<p class="text-slate-500 text-center py-3">No routes configured</p>';
+    }
+    var statsEl = document.getElementById('evalGatewayStats');
+    if (statsData.stats && Object.keys(statsData.stats).length > 0) {
+      statsEl.classList.remove('hidden');
+      var html = '<div class="text-[11px] text-slate-400 space-y-1">';
+      for (var route in statsData.stats) {
+        html += '<div><span class="font-bold text-primary">' + escHtml(route) + '</span>: ' + (statsData.stats[route].total_requests || 0) + ' requests</div>';
+      }
+      html += '</div>';
+      statsEl.innerHTML = html;  <!-- xray: ignore[JS-SEC-001] -->
+    }
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function _evalAddRoute() {
+  var name = document.getElementById('evalRouteName').value.trim();
+  var strategy = document.getElementById('evalRouteStrategy').value;
+  var modelsStr = document.getElementById('evalRouteModels').value.trim();
+  if (!name || !modelsStr) { toast('Name and models required', 'warning'); return; }
+  var models = modelsStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  try {
+    var res = await fetch(BACKEND + '/__gateway/routes', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name: name, strategy: strategy, models: models })
+    });
+    var data = await res.json();
+    if (data.ok) { toast('Route \'' + name + '\' added', 'success'); _evalRefreshGateway(); }
+    else toast(data.error || 'Failed', 'error');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function _evalResolve() {
+  var name = document.getElementById('evalResolveName').value.trim();
+  if (!name) return;
+  try {
+    var res = await fetch(BACKEND + '/__gateway/resolve', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ route_name: name })
+    });
+    var data = await res.json();
+    document.getElementById('evalResolveResult').textContent = data.model || data.error || '---';
+  } catch (e) { document.getElementById('evalResolveResult').textContent = 'Error'; }
+}
+
+// ═══════════ SKILL LAB ═══════════
+var _sl = {
+  sessionId: null,
+  eventSource: null,
+  scoreHistory: [],
+  lastResult: null,
+  step: 'upload',           // current wizard step
+  scenarios: [],            // cached scenario data for re-renders
+  evals: [],                // cached eval data for re-renders
+};
+
+// ── Card Engine (ZenAIos philosophy) ──────────────────────────────
+// Cards are config objects → one renderer builds all DOM.
+// To change any card: edit its config, call slRender().
+
+/**
+ * _createShell(card) — the single card factory (mirrors ZenAIos _createShell).
+ * Every card in Skill Lab goes through this one function.
+ */
+function _slCreateShell(card) {
+  var cat = card.tint || '';
+  var cls = 'card-shell' + (cat ? ' tint-' + cat : '');
+  var html = '<div class="' + cls + '"' +
+    (card.id ? ' data-card-id="' + card.id + '"' : '') +
+    (card.shellStyle ? ' style="' + card.shellStyle + '"' : '') + '>';
+
+  // Header (skip if noHeader)
+  if (!card.noHeader) {
+    html += '<div class="card-header">';
+    if (card.icon) html += '<span class="material-symbols-outlined card-icon">' + card.icon + '</span>';
+    if (card.title) html += '<span>' + card.title + '</span>';
+    if (card.badge) html += card.badge;
+    html += '</div>';
+  }
+
+  // Body
+  html += '<div class="card-body"' + (card.bodyStyle ? ' style="' + card.bodyStyle + '"' : '') + '>';
+  // Content rendered by card.render(card) or card.body string
+  if (typeof card.render === 'function') html += card.render(card);
+  else if (card.body) html += card.body;
+  html += '</div></div>';
+  return html;
+}
+
+/**
+ * SL_CARDS — declarative card configuration for every step.
+ * Same pattern as dashboard-config.json: {id, type, zone, w, ...}
+ * zone = wizard step. w = grid column span. render = content function.
+ * To add/remove/reorder cards: edit this array, done.
+ */
+var SL_CARDS = [
+  // ── Always visible: Header ──
+  { id: 'header', step: '*', w: 12, noHeader: true,
+    render: function() {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;">' +
+        '<div>' +
+        '<h2 style="font-size:16px;font-weight:700;color:#e1e4ed;display:flex;align-items:center;gap:8px;margin:0;">' +
+        '<span class="material-symbols-outlined" style="font-size:20px;color:#3b82f6;">auto_fix_high</span>' +
+        'Self-Improving Skill Lab</h2>' +
+        '<p style="font-size:11px;color:#5a5e72;margin:4px 0 0 0;">Upload a skill, generate test scenarios, optimize with 3 AI agents, export training data</p>' +
+        '</div>' +
+        '<div id="slSessionBadge" class="hidden" style="font-size:10px;color:#5a5e72;font-family:\'Fira Code\',monospace;background:#0f1117;border:1px solid #2d3143;border-radius:8px;padding:4px 10px;"></div>' +
+        '</div>';
+    }
+  },
+  // ── Always visible: Step indicator ──
+  { id: 'steps', step: '*', w: 12, noHeader: true,
+    render: function() {
+      var steps = ['upload','configure','optimize','results'];
+      var html = '<div class="sl-steps" id="slSteps">';
+      for (var i = 0; i < steps.length; i++) {
+        if (i > 0) html += '<div class="sl-step-line"></div>';
+        var s = steps[i];
+        var cls = 'sl-step-pill';
+        var si = steps.indexOf(_sl.step);
+        if (steps.indexOf(s) < si) cls += ' done';
+        else if (s === _sl.step) cls += ' active';
+        html += '<div class="' + cls + '" data-step="' + s + '"><span class="step-dot"></span>' + s.charAt(0).toUpperCase() + s.slice(1) + '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+  },
+
+  // ── Step 1: Upload ──
+  { id: 'upload-zone', step: 'upload', w: 6, tint: 'action', icon: 'upload_file', title: 'Upload Skill',
+    render: function() {
+      return '<div class="sl-dropzone" id="slDropZone"' +
+        ' ondragover="event.preventDefault();this.classList.add(\'dragover\');"' +
+        ' ondragleave="this.classList.remove(\'dragover\');"' +
+        ' ondrop="event.preventDefault();this.classList.remove(\'dragover\');slHandleDrop(event);"' +
+        ' onclick="document.getElementById(\'slFileInput\').click();">' +
+        '<span class="material-symbols-outlined" style="font-size:36px;color:#5a5e72;display:block;margin-bottom:8px;">cloud_upload</span>' +
+        '<div style="font-size:12px;color:#8b8fa3;">Drop a SKILL.md or .zip here</div>' +
+        '<div style="font-size:10px;color:#5a5e72;margin-top:4px;">or click to browse</div>' +
+        '</div>' +
+        '<input type="file" id="slFileInput" style="display:none;" accept=".md,.txt,.zip" onchange="slHandleFileSelect(event)">' +
+        '<div id="slUploadedFiles" class="hidden" style="margin-top:10px;font-size:11px;color:#5a5e72;"></div>';
+    }
+  },
+  { id: 'upload-config', step: 'upload', w: 6, tint: 'info', icon: 'tune', title: 'Configuration',
+    bodyStyle: 'display:flex;flex-direction:column;gap:12px;',
+    render: function() {
+      return '<div>' +
+        '<label style="font-size:10px;color:#5a5e72;font-weight:600;display:block;margin-bottom:6px;">Or load an example:</label>' +
+        '<div id="slExampleList" style="display:flex;flex-wrap:wrap;gap:6px;"><span style="font-size:10px;color:#5a5e72;">Loading...</span></div></div>' +
+        '<div><label style="font-size:10px;color:#5a5e72;font-weight:600;display:block;margin-bottom:4px;">Model for analysis:</label>' +
+        '<select id="slModelSelect" class="sl-input" style="padding:6px 8px;"><option value="">Select a GGUF model...</option></select></div>' +
+        '<div><label style="font-size:10px;color:#5a5e72;font-weight:600;display:block;margin-bottom:4px;">Gemini API key (optional):</label>' +
+        '<input type="password" id="slGeminiKey" placeholder="AIza..." class="sl-input"></div>' +
+        '<button onclick="slAnalyze()" id="slAnalyzeBtn" disabled class="sl-btn sl-btn-primary" style="width:100%;padding:10px;font-size:13px;font-weight:700;justify-content:center;">' +
+        '<span class="material-symbols-outlined" style="font-size:16px;">psychology</span> Analyze Skill</button>';
+    }
+  },
+
+  // ── Step 2: Configure ──
+  { id: 'cfg-scenarios', step: 'configure', w: 6, tint: 'display', icon: 'science', title: 'Test Scenarios',
+    badge: '<span class="card-badge" onclick="slAddScenario()" style="cursor:pointer;color:#3b82f6;">+ Add</span>',
+    render: function() { return '<div id="slScenarios" style="display:flex;flex-direction:column;gap:8px;"></div>'; }
+  },
+  { id: 'cfg-evals', step: 'configure', w: 6, tint: 'info', icon: 'checklist', title: 'Evaluation Criteria',
+    badge: '<span class="card-badge" onclick="slAddEval()" style="cursor:pointer;color:#06b6d4;">+ Add</span>',
+    render: function() { return '<div id="slEvals" style="display:flex;flex-direction:column;gap:8px;"></div>'; }
+  },
+  { id: 'cfg-settings', step: 'configure', w: 12, tint: 'action', noHeader: true,
+    bodyStyle: 'display:flex;align-items:center;gap:16px;',
+    render: function() {
+      return '<div style="display:flex;align-items:center;gap:8px;"><label style="font-size:11px;color:#5a5e72;font-weight:600;">Max Rounds:</label>' +
+        '<input type="number" id="slMaxRounds" value="5" min="1" max="20" class="sl-input" style="width:60px;text-align:center;"></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;"><label style="font-size:11px;color:#5a5e72;font-weight:600;">Patience:</label>' +
+        '<input type="number" id="slPatience" value="3" min="0" max="10" class="sl-input" style="width:60px;text-align:center;" title="Stop after N rounds with no improvement (0=disabled)"></div>' +
+        '<div style="flex:1;"></div>' +
+        '<button onclick="slRegenerateConfig()" class="sl-btn sl-btn-ghost"><span class="material-symbols-outlined" style="font-size:14px;">refresh</span>Regenerate</button>' +
+        '<button onclick="slGoToStep(\'upload\')" class="sl-btn sl-btn-ghost">&larr; Back</button>' +
+        '<button onclick="slStartOptimization()" id="slStartBtn" class="sl-btn sl-btn-success" style="padding:8px 24px;font-size:13px;font-weight:700;">' +
+        '<span class="material-symbols-outlined" style="font-size:16px;">play_arrow</span> Start Optimization</button>';
+    }
+  },
+
+  // ── Step 3: Optimize ──
+  { id: 'opt-score', step: 'optimize', w: 12, tint: 'chart', icon: 'monitoring', title: 'Score Progress',
+    badge: '<span class="card-badge" style="display:flex;align-items:center;gap:4px;">' +
+           '<span id="slRunSpinner" style="display:inline-block;width:8px;height:8px;border:2px solid #8b5cf6;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;"></span> Running</span>' +
+           '<button onclick="slStopOptimization()" class="sl-btn sl-btn-danger" style="margin-left:auto;font-size:10px;padding:3px 10px;">' +
+           '<span class="material-symbols-outlined" style="font-size:12px;vertical-align:-2px;">stop</span> Stop</button>',
+    render: function() { return '<div id="slScoreChart" style="height:80px;display:flex;align-items:flex-end;gap:3px;"></div>'; }
+  },
+  { id: 'opt-log', step: 'optimize', w: 12, tint: 'status', icon: 'timeline', title: 'Round Log',
+    render: function() { return '<div id="slRoundLog" style="display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto;"></div>'; }
+  },
+
+  // ── Step 4: Results ──
+  { id: 'res-baseline', step: 'results', w: 3, tint: 'display', noHeader: true,
+    bodyStyle: 'text-align:center;padding:16px 10px;',
+    render: function() { return '<div class="kpi-label">Baseline</div><div class="kpi-value" id="slResBaseline" style="color:#5a5e72;">-</div>'; }
+  },
+  { id: 'res-final', step: 'results', w: 3, tint: 'success', noHeader: true,
+    bodyStyle: 'text-align:center;padding:16px 10px;',
+    render: function() { return '<div class="kpi-label">Final</div><div class="kpi-value" id="slResFinal" style="color:#22c55e;">-</div>'; }
+  },
+  { id: 'res-kept', step: 'results', w: 3, tint: 'chart', noHeader: true,
+    bodyStyle: 'text-align:center;padding:16px 10px;',
+    render: function() { return '<div class="kpi-label">Kept</div><div class="kpi-value" id="slResKept" style="color:#8b5cf6;">-</div>'; }
+  },
+  { id: 'res-discarded', step: 'results', w: 3, tint: 'status', noHeader: true,
+    bodyStyle: 'text-align:center;padding:16px 10px;',
+    render: function() { return '<div class="kpi-label">Discarded</div><div class="kpi-value" id="slResDiscarded" style="color:#f97316;">-</div>'; }
+  },
+  { id: 'res-chart', step: 'results', w: 8, tint: 'chart', icon: 'bar_chart', title: 'Score History',
+    render: function() { return '<div id="slFinalChart" style="height:80px;display:flex;align-items:flex-end;gap:3px;"></div>'; }
+  },
+  { id: 'res-training', step: 'results', w: 4, tint: 'action', icon: 'model_training', title: 'Training Data',
+    bodyStyle: 'display:flex;flex-direction:column;gap:10px;',
+    render: function() {
+      return '<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:10px;color:#5a5e72;">DPO Pairs</span>' +
+        '<span id="slResDpoPairs" style="font-size:14px;font-weight:700;color:#ec4899;">0</span></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:10px;color:#5a5e72;">SFT Examples</span>' +
+        '<span id="slResSftExamples" style="font-size:14px;font-weight:700;color:#ec4899;">0</span></div>' +
+        '<div style="display:flex;gap:6px;margin-top:4px;">' +
+        '<button onclick="slExportTrainingData(\'dpo\')" class="sl-btn sl-btn-accent" style="flex:1;font-size:10px;padding:6px;">Export DPO</button>' +
+        '<button onclick="slExportTrainingData(\'sft\')" class="sl-btn sl-btn-accent" style="flex:1;font-size:10px;padding:6px;">Export SFT</button></div>';
+    }
+  },
+  { id: 'res-changelog', step: 'results', w: 12, tint: 'info', icon: 'history', title: 'Mutation Changelog',
+    render: function() { return '<div id="slChangelog" style="display:flex;flex-direction:column;gap:6px;"></div>'; }
+  },
+  { id: 'res-diff', step: 'results', w: 12, tint: 'display', icon: 'difference', title: 'Skill Diff',
+    badge: '<div style="margin-left:auto;display:flex;gap:4px;">' +
+           '<button onclick="slShowDiffTab(\'original\')" class="sl-diff-tab active" data-diff="original">Original</button>' +
+           '<button onclick="slShowDiffTab(\'improved\')" class="sl-diff-tab" data-diff="improved">Improved</button></div>',
+    render: function() {
+      return '<div id="slDiffOriginal" style="background:rgba(0,0,0,0.4);border:1px solid #2d3143;border-radius:8px;padding:12px;font-family:\'Fira Code\',monospace;font-size:11px;color:#8b8fa3;white-space:pre-wrap;max-height:300px;overflow-y:auto;"></div>' +
+        '<div id="slDiffImproved" style="display:none;background:rgba(0,0,0,0.4);border:1px solid #2d3143;border-radius:8px;padding:12px;font-family:\'Fira Code\',monospace;font-size:11px;color:#22c55e;white-space:pre-wrap;max-height:300px;overflow-y:auto;"></div>';
+    }
+  },
+  { id: 'res-actions', step: 'results', w: 12, noHeader: true,
+    bodyStyle: 'display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:10px 14px;',
+    render: function() {
+      return '<button onclick="slDownload()" class="sl-btn sl-btn-primary"><span class="material-symbols-outlined" style="font-size:14px;">download</span>Download</button>' +
+        '<button onclick="slReset()" class="sl-btn sl-btn-ghost">New Skill</button>';
+    }
+  },
+];
+
+/**
+ * slRender() — the single render pass (mirrors CardEngine.render()).
+ * Reads SL_CARDS config, filters by current step, builds DOM.
+ * Call this whenever the step changes. That's it.
+ */
+function slRender() {
+  var root = document.getElementById('slRoot');
+  if (!root) return;
+  var step = _sl.step;
+
+  // Filter: always-visible cards (*) + current step
+  var visible = SL_CARDS.filter(function(c) { return c.step === '*' || c.step === step; });
+
+  var html = '';
+  for (var i = 0; i < visible.length; i++) {
+    var card = visible[i];
+    var w = card.w || 12;
+    html += '<div class="sl-col-' + w + '">' + _slCreateShell(card) + '</div>';
+  }
+  root.innerHTML = html;  <!-- xray: ignore[JS-SEC-001] -->
+}
+
+/**
+ * slSubCard — renders nested items (scenarios, evals, log entries).
+ * Same pattern: config in, HTML out.
+ */
+function slSubCard(cfg) {
+  return '<div class="card-shell sl-sub-card" style="border-left:2px solid ' + cfg.color + ';border-radius:6px;">' +
+    '<div style="padding:8px 10px;">' +
+    (cfg.removable ? '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+      '<span style="font-size:10px;font-weight:600;color:#5a5e72;">' + (cfg.label || '') + '</span>' +
+      '<button onclick="this.closest(\'.sl-sub-card\').remove()" style="background:none;border:none;font-size:14px;line-height:1;color:#ef4444;cursor:pointer;">&times;</button>' +
+      '</div>' : '') +
+    cfg.body +
+    '</div></div>';
+}
+
+/** Status pill (KEPT / DISCARD / Baseline) */
+function slPill(text, color) {
+  return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:' +
+    color + '18;color:' + color + ';font-weight:600;">' + text + '</span>';
+}
+
+function slPopulateModelSelect() {
+  var sel = document.getElementById('slModelSelect');
+  if (!sel) return;
+  var val = sel.value;
+  sel.innerHTML = '<option value="">Select a GGUF model...</option>';
+  (scannedModels || []).forEach(function(m, i) {
+    var opt = document.createElement('option');
+    opt.value = m.path;
+    opt.textContent = (m.name || m.path.split(/[\\/]/).pop());
+    sel.appendChild(opt);
+  });
+  if (val) sel.value = val;
+}
+
+function slLoadExamples() {
+  fetch(BACKEND + '/__skill-lab/examples').then(function(r) { return r.json(); }).then(function(data) {
+    var el = document.getElementById('slExampleList');
+    if (!data.examples || data.examples.length === 0) { el.innerHTML = '<span style="font-size:10px;color:#475569;">No examples</span>'; return; }
+    el.innerHTML = data.examples.map(function(ex) {
+      return '<button onclick="slLoadExample(\'' + escHtml(ex.name) + '\')" class="sl-example-btn">' + escHtml(ex.name) + '</button>';
+    }).join('');
+  }).catch(function() {
+    document.getElementById('slExampleList').innerHTML = '<span style="font-size:10px;color:#f87171;">Failed to load</span>';
+  });
+}
+
+async function slLoadExample(name) {
+  try {
+    var res = await fetch(BACKEND + '/__skill-lab/examples/' + encodeURIComponent(name) + '/load', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    _sl.sessionId = data.session_id;
+    document.getElementById('slSessionBadge').classList.remove('hidden');
+    document.getElementById('slSessionBadge').textContent = 'Session: ' + data.session_id.slice(0, 8);
+    document.getElementById('slUploadedFiles').classList.remove('hidden');
+    document.getElementById('slUploadedFiles').innerHTML = '<span style="color:#34d399;">Loaded:</span> ' + (data.files || []).map(function(f) { return escHtml(f); }).join(', ');
+    document.getElementById('slAnalyzeBtn').disabled = false;
+    toast('Loaded example: ' + name, 'success');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function slHandleDrop(event) {
+  var files = event.dataTransfer.files;
+  if (files.length > 0) slProcessFile(files[0]);
+}
+
+function slHandleFileSelect(event) {
+  var files = event.target.files;
+  if (files.length > 0) slProcessFile(files[0]);
+}
+
+async function slProcessFile(file) {
+  if (file.size > 10 * 1024 * 1024) { toast('File too large (max 10MB)', 'error'); return; }
+  try {
+    var body = {};
+    if (file.name.endsWith('.zip')) {
+      var buf = await file.arrayBuffer();
+      var b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+      body = { zip_base64: b64 };
+    } else {
+      var text = await file.text();
+      var name = file.name || 'SKILL.md';
+      body = { files: {} };
+      body.files[name] = text;
+    }
+    var res = await fetch(BACKEND + '/__skill-lab/upload', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    _sl.sessionId = data.session_id;
+    document.getElementById('slSessionBadge').classList.remove('hidden');
+    document.getElementById('slSessionBadge').textContent = 'Session: ' + data.session_id.slice(0, 8);
+    document.getElementById('slUploadedFiles').classList.remove('hidden');
+    document.getElementById('slUploadedFiles').innerHTML = '<span style="color:#34d399;">Uploaded:</span> ' + (data.files || []).map(function(f) { return escHtml(f); }).join(', ');
+    document.getElementById('slAnalyzeBtn').disabled = false;
+    toast('Skill uploaded', 'success');
+  } catch (e) { toast('Upload error: ' + e.message, 'error'); }
+}
+
+async function slAnalyze() {
+  if (!_sl.sessionId) { toast('Upload a skill first', 'warning'); return; }
+  var modelPath = document.getElementById('slModelSelect').value;
+  var geminiKey = document.getElementById('slGeminiKey').value.trim();
+  if (!modelPath && !geminiKey) { toast('Select a model or enter Gemini API key', 'warning'); return; }
+  var btn = document.getElementById('slAnalyzeBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:2px solid #3b82f6;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:-2px;margin-right:6px;"></span>Analyzing...';
+  try {
+    var res = await fetch(BACKEND + '/__skill-lab/analyze', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ session_id: _sl.sessionId, model_path: modelPath, gemini_api_key: geminiKey })
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    _sl.scenarios = data.scenarios || [];
+    _sl.evals = data.evals || [];
+    slGoToStep('configure');
+    toast('Analysis complete - review and edit the config', 'success');
+  } catch (e) {
+    toast('Analysis error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">psychology</span> Analyze Skill';
+  }
+}
+
+function slRenderScenarios(scenarios) {
+  if (scenarios) _sl.scenarios = scenarios;
+  var list = scenarios || _sl.scenarios || [];
+  var el = document.getElementById('slScenarios');
+  if (!el) return;
+  el.innerHTML = list.map(function(s, i) {
+    return '<div class="card-shell" style="border-left:2px solid #3b82f6;border-radius:6px;">' +
+      '<div style="padding:8px 10px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+      '<span style="font-size:10px;font-weight:600;color:#64748b;">Scenario ' + (i + 1) + '</span>' +
+      '<button onclick="this.closest(\'.card-shell\').remove()" style="font-size:12px;color:#f87171;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>' +
+      '</div>' +
+      '<input class="sl-scenario-name sl-input" value="' + escHtml(s.name || '') + '" placeholder="Scenario name" style="margin-bottom:4px;">' +
+      '<textarea class="sl-scenario-input sl-input" rows="2" placeholder="User input / test case">' + escHtml(s.input || '') + '</textarea>' +
+      '</div></div>';
+  }).join('');
+}
+
+function slRenderEvals(evals) {
+  if (evals) _sl.evals = evals;
+  var list = evals || _sl.evals || [];
+  var el = document.getElementById('slEvals');
+  if (!el) return;
+  el.innerHTML = list.map(function(e, i) {
+    return '<div class="card-shell" style="border-left:2px solid #06b6d4;border-radius:6px;">' +
+      '<div style="padding:8px 10px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+      '<span style="font-size:10px;font-weight:600;color:#64748b;">Eval ' + (i + 1) + '</span>' +
+      '<button onclick="this.closest(\'.card-shell\').remove()" style="font-size:12px;color:#f87171;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>' +
+      '</div>' +
+      '<input class="sl-eval-name sl-input" value="' + escHtml(e.name || '') + '" placeholder="Eval name" style="margin-bottom:4px;">' +
+      '<textarea class="sl-eval-criteria sl-input" rows="2" placeholder="Pass criteria">' + escHtml(e.criteria || '') + '</textarea>' +
+      '</div></div>';
+  }).join('');
+}
+
+function slAddScenario() {
+  var el = document.getElementById('slScenarios');
+  el.insertAdjacentHTML('beforeend',
+    '<div class="card-shell" style="border-left:2px solid #3b82f6;border-radius:6px;">' +
+    '<div style="padding:8px 10px;">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+    '<span style="font-size:10px;font-weight:600;color:#64748b;">New Scenario</span>' +
+    '<button onclick="this.closest(\'.card-shell\').remove()" style="font-size:12px;color:#f87171;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>' +
+    '</div>' +
+    '<input class="sl-scenario-name sl-input" placeholder="Scenario name" style="margin-bottom:4px;">' +
+    '<textarea class="sl-scenario-input sl-input" rows="2" placeholder="User input / test case"></textarea>' +
+    '</div></div>'
+  );
+}
+
+function slAddEval() {
+  var el = document.getElementById('slEvals');
+  el.insertAdjacentHTML('beforeend',
+    '<div class="card-shell" style="border-left:2px solid #06b6d4;border-radius:6px;">' +
+    '<div style="padding:8px 10px;">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+    '<span style="font-size:10px;font-weight:600;color:#64748b;">New Eval</span>' +
+    '<button onclick="this.closest(\'.card-shell\').remove()" style="font-size:12px;color:#f87171;background:none;border:none;cursor:pointer;line-height:1;">&times;</button>' +
+    '</div>' +
+    '<input class="sl-eval-name sl-input" placeholder="Eval name" style="margin-bottom:4px;">' +
+    '<textarea class="sl-eval-criteria sl-input" rows="2" placeholder="Pass criteria"></textarea>' +
+    '</div></div>'
+  );
+}
+
+function slCollectConfig() {
+  var scenarios = [];
+  document.querySelectorAll('#slScenarios > div').forEach(function(div) {
+    scenarios.push({
+      name: (div.querySelector('.sl-scenario-name') || {}).value || '',
+      input: (div.querySelector('.sl-scenario-input') || {}).value || '',
+    });
+  });
+  var evals = [];
+  document.querySelectorAll('#slEvals > div').forEach(function(div) {
+    evals.push({
+      name: (div.querySelector('.sl-eval-name') || {}).value || '',
+      criteria: (div.querySelector('.sl-eval-criteria') || {}).value || '',
+    });
+  });
+  return { scenarios: scenarios, evals: evals };
+}
+
+async function slRegenerateConfig() {
+  if (!_sl.sessionId) return;
+  toast('Regenerating...', 'info');
+  try {
+    var modelPath = document.getElementById('slModelSelect').value;
+    var geminiKey = document.getElementById('slGeminiKey').value.trim();
+    var res = await fetch(BACKEND + '/__skill-lab/analyze', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ session_id: _sl.sessionId, model_path: modelPath, gemini_api_key: geminiKey })
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    slRenderScenarios(data.scenarios || []);
+    slRenderEvals(data.evals || []);
+    toast('Config regenerated', 'success');
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function slStartOptimization() {
+  if (!_sl.sessionId) return;
+  var config = slCollectConfig();
+  if (config.scenarios.length === 0) { toast('Add at least one scenario', 'warning'); return; }
+  if (config.evals.length === 0) { toast('Add at least one eval', 'warning'); return; }
+
+  await fetch(BACKEND + '/__skill-lab/update-config', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ session_id: _sl.sessionId, scenarios: config.scenarios, evals: config.evals })
+  });
+
+  var maxRounds = parseInt(document.getElementById('slMaxRounds').value) || 5;
+  var patience = parseInt((document.getElementById('slPatience') || {}).value) || 0;
+  var modelPath = document.getElementById('slModelSelect').value;
+  var geminiKey = document.getElementById('slGeminiKey').value.trim();
+
+  try {
+    var res = await fetch(BACKEND + '/__skill-lab/start/' + _sl.sessionId, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ model_path: modelPath, gemini_api_key: geminiKey, max_rounds: maxRounds, patience: patience })
+    });
+    var data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+
+    _sl.scoreHistory = [];
+    _sl.lastResult = null;
+    document.getElementById('slRoundLog').innerHTML = '';
+    document.getElementById('slScoreChart').innerHTML = '';
+    slGoToStep('optimize');
+    slStartSSE();
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function slStartSSE() {
+  if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+  var url = BACKEND + '/__skill-lab/stream/' + _sl.sessionId;
+  _sl.eventSource = new EventSource(url);
+  _sl.eventSource.onmessage = function(e) {
+    try {
+      var event = JSON.parse(e.data);
+      slHandleSSE(event);
+    } catch (err) { /* ignore parse errors */ }
+  };
+  _sl.eventSource.onerror = function() {
+    _sl.eventSource.close();
+    _sl.eventSource = null;
+  };
+}
+
+function slHandleSSE(event) {
+  var logEl = document.getElementById('slRoundLog');
+  switch (event.type) {
+    case 'baseline':
+      var score = (event.data.score || 0);
+      _sl.scoreHistory.push(score);
+      slRenderScoreChart('slScoreChart');
+      logEl.insertAdjacentHTML('beforeend',
+        '<div class="card-shell" style="border-left:2px solid #64748b;border-radius:6px;">' +
+        '<div style="padding:8px 12px;display:flex;align-items:center;gap:10px;">' +
+        '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(100,116,139,0.15);color:#94a3b8;">Baseline</span>' +
+        '<span style="font-size:14px;font-weight:700;color:#e2e8f0;">' + score.toFixed(1) + '%</span>' +
+        '</div></div>'
+      );
+      break;
+
+    case 'experiment_result':
+      var d = event.data;
+      var kept = d.status === 'kept';
+      var tintColor = kept ? '#34d399' : '#f97316';
+      _sl.scoreHistory.push(kept ? d.score_after : (d.score_before || _sl.scoreHistory[_sl.scoreHistory.length - 1] || 0));
+      slRenderScoreChart('slScoreChart');
+      logEl.insertAdjacentHTML('beforeend',
+        '<div class="card-shell" style="border-left:2px solid ' + tintColor + ';border-radius:6px;">' +
+        '<div style="padding:8px 12px;">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+        '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:' + (kept ? 'rgba(52,211,153,0.12)' : 'rgba(247,115,22,0.12)') + ';color:' + tintColor + ';font-weight:600;">' + (kept ? 'KEPT' : 'DISCARD') + '</span>' +
+        '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(139,92,246,0.1);color:#8b5cf6;">' + escHtml(d.strategy_type || '') + '</span>' +
+        '<span style="font-size:12px;font-weight:600;color:' + tintColor + ';margin-left:auto;">' + (d.score_before || 0).toFixed(1) + '% &rarr; ' + (d.score_after || 0).toFixed(1) + '%</span>' +
+        '</div>' +
+        (d.description ? '<div style="font-size:11px;color:#94a3b8;">' + escHtml(d.description) + '</div>' : '') +
+        '</div></div>'
+      );
+      logEl.scrollTop = logEl.scrollHeight;
+      break;
+
+    case 'complete':
+      if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+      var spinner = document.getElementById('slRunSpinner');
+      if (spinner) spinner.style.display = 'none';
+      slShowResults(event.data);
+      break;
+
+    case 'error':
+      if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+      var spinner = document.getElementById('slRunSpinner');
+      if (spinner) spinner.style.display = 'none';
+      toast('Optimization error: ' + (event.data.message || 'Unknown'), 'error');
+      break;
+  }
+}
+
+function slRenderScoreChart(containerId) {
+  var el = document.getElementById(containerId);
+  if (!el || _sl.scoreHistory.length === 0) return;
+  var maxScore = 100;
+  el.innerHTML = _sl.scoreHistory.map(function(s, i) {  <!-- xray: ignore[JS-SEC-001] -->
+    var pct = Math.max(4, (s / maxScore) * 100);
+    var color = i === 0 ? '#64748b' : (s >= _sl.scoreHistory[0] ? '#34d399' : '#f97316');
+    return '<div style="flex:1;max-width:36px;display:flex;flex-direction:column;align-items:center;">' +
+      '<div style="font-size:8px;color:#475569;margin-bottom:3px;">' + s.toFixed(0) + '</div>' +
+      '<div class="sl-bar" style="width:100%;height:' + pct + '%;background:' + color + ';"></div>' +
+      '</div>';
+  }).join('');
+}
+
+function slShowResults(data) {
+  var fr = data || {};
+  _sl.lastResult = fr;
+
+  // Render the results step DOM first, then populate
+  _sl.step = 'results';
+  slRender();
+
+  document.getElementById('slResBaseline').textContent = (fr.baseline_score || 0).toFixed(1) + '%';
+  document.getElementById('slResFinal').textContent = (fr.final_score || 0).toFixed(1) + '%';
+
+  var ml = fr.mutation_log || [];
+  document.getElementById('slResKept').textContent = ml.filter(function(m) { return m.kept; }).length;
+  document.getElementById('slResDiscarded').textContent = ml.filter(function(m) { return !m.kept; }).length;
+
+  // Training data counts
+  document.getElementById('slResDpoPairs').textContent = (fr.dpo_pairs || []).length;
+  document.getElementById('slResSftExamples').textContent = (fr.sft_examples || []).length;
+
+  // Score chart
+  _sl.scoreHistory = fr.score_history || _sl.scoreHistory;
+  slRenderScoreChart('slFinalChart');
+
+  // Changelog
+  var clEl = document.getElementById('slChangelog');
+  clEl.innerHTML = ml.map(function(m, i) {
+    var kept = m.kept;
+    var tintColor = kept ? '#34d399' : '#f97316';
+    return '<div class="card-shell" style="border-left:2px solid ' + tintColor + ';border-radius:6px;">' +
+      '<div style="padding:8px 12px;">' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+      '<span style="font-size:10px;font-weight:700;color:#475569;">R' + (i + 1) + '</span>' +
+      '<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:' + (kept ? 'rgba(52,211,153,0.12)' : 'rgba(247,115,22,0.12)') + ';color:' + tintColor + ';">' + (kept ? 'KEPT' : 'DISCARD') + '</span>' +
+      '<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(139,92,246,0.1);color:#8b5cf6;">' + escHtml(m.strategy_type || '') + '</span>' +
+      '<span style="font-size:11px;color:#e2e8f0;flex:1;">' + escHtml(m.description || '') + '</span>' +
+      '<span style="font-size:10px;color:#64748b;">' + (m.score_before || 0).toFixed(1) + '% &rarr; ' + (m.score_after || 0).toFixed(1) + '%</span>' +
+      '</div>' +
+      (m.diagnosis ? '<div style="font-size:10px;color:#64748b;margin-top:4px;">' + escHtml(m.diagnosis) + '</div>' : '') +
+      '</div></div>';
+  }).join('');
+
+  // Diff view
+  document.getElementById('slDiffOriginal').textContent = fr.original_skill_content || '(not available)';
+  document.getElementById('slDiffImproved').textContent = fr.improved_skill_content || '(not available)';
+}
+
+function slShowDiffTab(which) {
+  document.querySelectorAll('.sl-diff-tab').forEach(function(b) { b.classList.remove('active'); });
+  document.querySelector('.sl-diff-tab[data-diff="' + which + '"]').classList.add('active');
+  document.getElementById('slDiffOriginal').style.display = which === 'original' ? '' : 'none';
+  document.getElementById('slDiffImproved').style.display = which === 'improved' ? '' : 'none';
+}
+
+async function slExportTrainingData(type) {
+  if (!_sl.lastResult) { toast('No results to export', 'warning'); return; }
+  var data = type === 'dpo' ? (_sl.lastResult.dpo_pairs || []) : (_sl.lastResult.sft_examples || []);
+  if (data.length === 0) { toast('No ' + type.toUpperCase() + ' data collected', 'warning'); return; }
+  var jsonl = data.map(function(d) { return JSON.stringify(d); }).join('\n');
+  var blob = new Blob([jsonl], { type: 'application/jsonl' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = type + '_training_data.jsonl';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Exported ' + data.length + ' ' + type.toUpperCase() + ' examples', 'success');
+}
+
+async function slStopOptimization() {
+  if (!_sl.sessionId) return;
+  try {
+    await fetch(BACKEND + '/__skill-lab/stop/' + _sl.sessionId, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+    var spinner = document.getElementById('slRunSpinner');
+    if (spinner) spinner.style.display = 'none';
+    toast('Optimization stopped', 'warning');
+    var res = await fetch(BACKEND + '/__skill-lab/status/' + _sl.sessionId);
+    var data = await res.json();
+    if (data.final_result) slShowResults(data.final_result);
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function slDownload() {
+  if (!_sl.sessionId) return;
+  try {
+    var res = await fetch(BACKEND + '/__skill-lab/download/' + _sl.sessionId);
+    if (!res.ok) { toast('Download failed', 'error'); return; }
+    var blob = await res.blob();
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = 'improved_skill.zip'; a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+
+function slGoToStep(step) {
+  _sl.step = step;
+  slRender();
+  // After render, populate dynamic content for specific steps
+  if (step === 'configure') {
+    slRenderScenarios();
+    slRenderEvals();
+  } else if (step === 'optimize') {
+    slRenderScoreChart('slScoreChart');
+  }
+}
+
+function slReset() {
+  _sl.sessionId = null;
+  _sl.scoreHistory = [];
+  _sl.lastResult = null;
+  _sl.scenarios = [];
+  _sl.evals = [];
+  if (_sl.eventSource) { _sl.eventSource.close(); _sl.eventSource = null; }
+  _sl.step = 'upload';
+  slRender();
+  slPopulateModelSelect();
+  slLoadExamples();
+}
+
+// Auto-init Skill Lab on tab switch
+var _slInitDone = false;
+var _origSwitchTab = switchTab;
+switchTab = function(tabId) {
+  _origSwitchTab(tabId);
+  if (tabId === 'skilllab' && !_slInitDone) {
+    _slInitDone = true;
+    slRender();
+    slPopulateModelSelect();
+    slLoadExamples();
+  }
+};
+
+// ── Eval Studio: Conversation Judges ──
+async function _evalJudgeConversation() {
+  var judge = document.getElementById('evalConvJudge').value;
+  var turnsStr = document.getElementById('evalConvTurns').value.trim();
+  var turns;
+  try { turns = JSON.parse(turnsStr); } catch(e) { toast('Invalid JSON format', 'error'); return; }
+  try {
+    var res = await fetch(BACKEND + '/__judge/conversation', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ judge: judge, conversation_id: 'eval-ui-' + Date.now(), model_name: 'eval-test', turns: turns })
+    });
+    var data = await res.json();
+    var resultEl = document.getElementById('evalConvResult');
+    var detailEl = document.getElementById('evalConvDetail');
+    if (data.ok) {
+      var r = data.result;
+      var color = r.passed ? 'text-emerald-400' : 'text-red-400';
+      resultEl.innerHTML = '<span class="' + color + ' font-bold">' + (r.passed ? 'PASS' : 'FAIL') + '</span> &mdash; Score: <span class="font-bold text-primary">' + r.score.toFixed(3) + '</span>';
+      detailEl.textContent = JSON.stringify(r.details, null, 2);
+      detailEl.classList.remove('hidden');
+    } else {
+      resultEl.textContent = data.error || 'Error';
+      detailEl.classList.add('hidden');
+    }
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+}
+</script>
+
+</body>
+</html>

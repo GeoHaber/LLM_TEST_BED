@@ -1,0 +1,140 @@
+{
+  "generated_at": "2026-05-22 19:27",
+  "directory": "C:\\Users\\dvdze\\Desktop\\GitHub\\GeoHab\\LLM_TestBed",
+  "engine": "rule_based",
+  "summary": {
+    "overall_risk": 27,
+    "risk_rating": "LOW",
+    "health_score": 80,
+    "total_source_files": 31,
+    "total_lines": 23526,
+    "test_ratio": 0.94,
+    "scan_findings_total": 502,
+    "design_findings_total": 5
+  },
+  "release_readiness": {
+    "decision": "NO-GO",
+    "rationale": "Critical risk remains open. Block release until critical design and high-severity scan items are remediated."
+  },
+  "grade_card": {
+    "overall_grade": "C",
+    "overall_score": 79,
+    "rows": [
+      {
+        "category": "Architecture Risk",
+        "score": 27,
+        "basis": "lower is better",
+        "grade": "C"
+      },
+      {
+        "category": "Code Health",
+        "score": 80,
+        "basis": "higher is better",
+        "grade": "B"
+      },
+      {
+        "category": "Test Readiness",
+        "score": 94,
+        "basis": "higher is better",
+        "grade": "A"
+      },
+      {
+        "category": "Dependency Hygiene",
+        "score": 0,
+        "basis": "lower is better",
+        "grade": "A"
+      },
+      {
+        "category": "Release Gates",
+        "score": 1,
+        "basis": "lower is better",
+        "grade": "C"
+      }
+    ]
+  },
+  "quality_gates": [
+    {
+      "gate": "No critical architectural findings",
+      "target": "0",
+      "actual": "0",
+      "status": "PASS"
+    },
+    {
+      "gate": "No HIGH scan findings",
+      "target": "0",
+      "actual": "18",
+      "status": "FAIL"
+    },
+    {
+      "gate": "Risk score threshold",
+      "target": "<= 35",
+      "actual": "27",
+      "status": "PASS"
+    },
+    {
+      "gate": "Project health score",
+      "target": ">= 80",
+      "actual": "80",
+      "status": "PASS"
+    },
+    {
+      "gate": "Test ratio baseline",
+      "target": ">= 30%",
+      "actual": "94%",
+      "status": "PASS"
+    }
+  ],
+  "risk_register": [
+    {
+      "id": "R-01",
+      "severity": "HIGH",
+      "severity_rank": 3,
+      "risk": "144 code smells \u2014 refactoring overdue",
+      "category": "quality",
+      "owner": "Engineering",
+      "due": "Sprint +1",
+      "mitigation": "Prioritize god-class decomposition and high-complexity function extraction. Use X-Ray's sprint batches to plan incremental fixes."
+    },
+    {
+      "id": "R-02",
+      "severity": "HIGH",
+      "severity_rank": 3,
+      "risk": "82 duplicate groups (170 occurrences)",
+      "category": "maintainability",
+      "owner": "Engineering",
+      "due": "Sprint +1",
+      "mitigation": "Extract shared logic into utility modules. For cross-file patterns, consider base classes or composition."
+    },
+    {
+      "id": "R-03",
+      "severity": "MEDIUM",
+      "severity_rank": 2,
+      "risk": "Many unused backend endpoints",
+      "category": "connectivity",
+      "owner": "Platform",
+      "due": "Sprint +2",
+      "mitigation": "Document or deprecate unused endpoints. Consider maintaining an OpenAPI spec to track intentional API surface."
+    },
+    {
+      "id": "R-04",
+      "severity": "MEDIUM",
+      "severity_rank": 2,
+      "risk": "100% of endpoints are orphaned",
+      "category": "connectivity",
+      "owner": "Platform",
+      "due": "Sprint +2",
+      "mitigation": "Audit API surface \u2014 remove dead routes, add tests for live ones, and consider API versioning to manage lifecycle."
+    },
+    {
+      "id": "R-05",
+      "severity": "MEDIUM",
+      "severity_rank": 2,
+      "risk": "10 files exceed 500 lines",
+      "category": "file_organization",
+      "owner": "Architecture",
+      "due": "Sprint +2",
+      "mitigation": "Split god-files into focused modules. Use the Single Responsibility Principle \u2014 each file should have one reason to change."
+    }
+  ],
+  "recommendation": "Several high-priority architectural issues need attention before continuing feature work. Focus on connectivity gaps, coupling hotspots, and health score improvements \u2014 these compound over time."
+}
